@@ -1,0 +1,40 @@
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Web build outputs ─────────────────────────────────────────────────────────
+node_modules/
+dist/
+build/
+.cache/
+.parcel-cache/
+
+# ── Godot ─────────────────────────────────────────────────────────────────────
+# Exclude import cache and generated files; keep project.godot and scenes
+.godot/
+*.import
+*.translation
+export_presets.cfg
+*.mono/
+
+# ── Unity ─────────────────────────────────────────────────────────────────────
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
+[Mm]emory[Cc]aptures/
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+sysinfo.txt
+*.apk
+*.unitypackage
+*.unitypackage.meta
+crashlytics-build.properties
+
+# ── Editor ────────────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*~
