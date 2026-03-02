@@ -57,3 +57,5 @@ python3 -m http.server 8080
 | `↑` | Switch to upper track at next points |
 | `↓` | Switch to lower track at next points |
 | `Space` | Emergency brake (damages cargo) |
+
+For more info, email: naveen.sk@gmail.com
