@@ -226,6 +226,15 @@ function getSafeLaneAt(worldX) {
     return 1;
 }
 
+// Returns 0-4 difficulty tier based on world position
+function tierAt(x) {
+    if (x < 3000)  return 0; // clear run — learn the controls
+    if (x < 7000)  return 1; // static wagons appear
+    if (x < 13000) return 2; // slow same-direction freight
+    if (x < 22000) return 3; // slow opposing trains join
+    return 4;                 // full speed, hard sections
+}
+
 function buildSafeCorridor() {
     const corridor = [];
     let x    = 0;
@@ -236,7 +245,6 @@ function buildSafeCorridor() {
         const nextX  = Math.min(x + segLen, 60000);
         const mid    = x + segLen / 2;
 
-        // Snap to a valid lane if track layout changed
         const lanesHere = getLanesAt(mid);
         if (!lanesHere.includes(lane)) {
             lane = lanesHere[Math.floor(Math.random() * lanesHere.length)];
@@ -244,77 +252,100 @@ function buildSafeCorridor() {
 
         corridor.push({ x, endX: nextX, lane });
 
-        // Maybe change lane at segment boundary → adds a required switch
-        if (x > 1000) {
-            const lanesNext = getLanesAt(nextX + 100);
-            const alts = lanesNext.filter(l => l !== lane);
-            if (alts.length > 0 && Math.random() > 0.48) {
-                const newLane = alts[Math.floor(Math.random() * alts.length)];
-                // Tight = hard (small window), loose = easy
-                const isHard  = Math.random() > 0.6;
-                const offset  = isHard ? (100 + Math.random() * 80) : (180 + Math.random() * 120);
-                gameState.switches.push({
-                    id: gameState.nextSwitchId++,
-                    worldX: nextX - offset,
-                    fromLane: lane,
-                    toLane: newLane,
-                    committed: false, taken: false, isMerge: false,
-                    isRequired: true,
-                });
-                lane = newLane;
-            }
+        const tier = tierAt(x);
+
+        // No required lane changes in the tutorial zone.
+        // Later zones: lane changes become more frequent and windows tighter.
+        const changeProbability = [0, 0.18, 0.35, 0.48, 0.55][tier];
+        const lanesNext = getLanesAt(nextX + 100);
+        const alts = lanesNext.filter(l => l !== lane);
+
+        if (tier >= 1 && alts.length > 0 && Math.random() < changeProbability) {
+            const newLane = alts[Math.floor(Math.random() * alts.length)];
+            // Tighter window as difficulty increases
+            const windowMin = [0, 200, 170, 130, 100][tier];
+            const windowVar = [0,  80,  70,  60,  50][tier];
+            const offset    = windowMin + Math.random() * windowVar;
+            gameState.switches.push({
+                id: gameState.nextSwitchId++,
+                worldX: nextX - offset,
+                fromLane: lane, toLane: newLane,
+                committed: false, taken: false, isMerge: false,
+                isRequired: true,
+            });
+            lane = newLane;
         }
         x = nextX;
     }
     gameState.corridor = corridor;
 }
 
-// ── Traffic placement (corridor-safe) ─────────────────────────────────────────
+// ── Traffic placement (corridor-safe, difficulty-ramped) ──────────────────────
 function placeTraffic() {
-    // Normal scattered traffic on non-safe lanes
-    for (let x = 1500; x < 60000; x += 380 + Math.random() * 580) {
-        if (Math.random() > 0.62) continue;
+    // Tier spacing and density — wider gaps early, tighter later
+    const tierSpacingMin = [0,    900, 600, 440, 360];
+    const tierSpacingVar = [0,    600, 500, 380, 280];
+    const tierDensity    = [0,   0.40, 0.55, 0.65, 0.72]; // probability to actually place
 
-        const safeLane = getSafeLaneAt(x);
-        const allLanes = getLanesAt(x);
-        const pool     = allLanes.filter(l => l !== safeLane);
-        if (pool.length === 0) continue;
+    for (let tier = 1; tier <= 4; tier++) {
+        const zoneStart = [0, 3000, 7000, 13000, 22000][tier];
+        const zoneEnd   = [0, 7000, 13000, 22000, 60000][tier];
 
-        const lane     = pool[Math.floor(Math.random() * pool.length)];
-        gameState.obstacles.push(makeObs(x, lane));
+        for (let x = zoneStart; x < zoneEnd; x += tierSpacingMin[tier] + Math.random() * tierSpacingVar[tier]) {
+            if (Math.random() > tierDensity[tier]) continue;
+
+            const safeLane = getSafeLaneAt(x);
+            const pool     = getLanesAt(x).filter(l => l !== safeLane);
+            if (pool.length === 0) continue;
+
+            const lane = pool[Math.floor(Math.random() * pool.length)];
+            gameState.obstacles.push(makeObs(x, lane, tier));
+        }
     }
 
-    // Hard sections: block ALL non-safe lanes simultaneously
-    for (let x = 6000; x < 60000; x += 3500 + Math.random() * 4000) {
-        const safeLane   = getSafeLaneAt(x);
-        const allLanes   = getLanesAt(x);
-        const dangerLanes = allLanes.filter(l => l !== safeLane);
+    // Hard sections: ALL non-safe lanes blocked simultaneously.
+    // Only from tier 3 onward (≥13 000 units in).
+    for (let x = 15000; x < 60000; x += 4000 + Math.random() * 4000) {
+        const safeLane    = getSafeLaneAt(x);
+        const dangerLanes = getLanesAt(x).filter(l => l !== safeLane);
+        const tier        = tierAt(x);
         for (const lane of dangerLanes) {
-            const opp = Math.random() > 0.4;
+            const opp = tier >= 4 ? Math.random() > 0.35 : false; // no opposing in tier 3
             gameState.obstacles.push({
-                worldX: x + Math.random() * 120,
+                worldX: x + Math.random() * 100,
                 lane,
                 length: opp ? 160 : 130,
                 moving: true, opposing: opp,
-                speed: opp ? 55 + Math.random() * 18 : 12 + Math.random() * 8,
-                type: opp ? 'passenger' : 'freight',
-                cars: opp ? 4 : 5,
+                speed:  opp ? 50 + Math.random() * 20 : 10 + Math.random() * 8,
+                type:   opp ? 'passenger' : 'freight',
+                cars:   opp ? 4 : 5,
             });
         }
     }
 }
 
-function makeObs(x, lane) {
-    const isMoving   = Math.random() > 0.28;
-    const isOpposing = isMoving && Math.random() > 0.42;
+function makeObs(x, lane, tier) {
+    // What kinds of traffic are allowed at this tier?
+    // tier 1: static only
+    // tier 2: static + slow same-direction
+    // tier 3: + slow opposing
+    // tier 4: full mix, fast opposing
+    const canMove    = tier >= 2;
+    const canOppose  = tier >= 3;
+    const fastOppose = tier >= 4;
+
+    const isMoving   = canMove   && Math.random() > 0.45;
+    const isOpposing = canOppose && isMoving && Math.random() > (fastOppose ? 0.38 : 0.6);
     let type, length, speed, cars;
 
     if (!isMoving) {
         type = 'wagons'; length = 45 + Math.random() * 55; speed = 0;
         cars = Math.floor(length / 24);
     } else if (isOpposing) {
-        type = 'passenger'; length = 120 + Math.random() * 80;
-        speed = 50 + Math.random() * 25; cars = Math.floor(length / 30);
+        type   = 'passenger';
+        length = 120 + Math.random() * 80;
+        speed  = fastOppose ? 50 + Math.random() * 22 : 28 + Math.random() * 14;
+        cars   = Math.floor(length / 30);
     } else {
         type   = Math.random() > 0.5 ? 'freight' : 'passenger';
         length = type === 'freight' ? 100 + Math.random() * 120 : 80 + Math.random() * 60;
@@ -396,7 +427,7 @@ function buildTrackLayout() {
 // ── Passing loops (temporary extra lane for escape) ───────────────────────────
 function addPassingLoops() {
     const LOOP_LANE = 10; // Unique ID for loop lanes
-    for (let x = 2500; x < 58000; x += 2800 + Math.random() * 3200) {
+    for (let x = 7000; x < 58000; x += 2800 + Math.random() * 3200) {
         const baseLanes  = getLanesAt(x);
         if (baseLanes.length >= 4) continue; // Already wide enough
 
