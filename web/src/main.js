@@ -54,10 +54,15 @@ class App {
         this.canvas.style.height = cssH + 'px';
         this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Pin the overlay to the canvas
+        /* The overlay normally sits exactly on the canvas so panels line up with
+           the art. But on a small screen the letterboxed canvas is a strip a
+           couple of hundred pixels tall, and a dialogue panel pinned to it gets
+           clipped with its buttons out of reach — you cannot even start the
+           game. Below that size, give the overlay the viewport instead. */
         const o = this.overlay.style;
-        o.width = cssW + 'px';
-        o.height = cssH + 'px';
+        const cramped = cssW < 720 || cssH < 420;
+        o.width  = (cramped ? Math.min(window.innerWidth - 24, 640) : cssW) + 'px';
+        o.height = (cramped ? window.innerHeight - 24 : cssH) + 'px';
         o.left = '50%'; o.top = '50%';
         o.transform = 'translate(-50%, -50%)';
 
