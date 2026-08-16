@@ -21,7 +21,7 @@ const WHISTLE_RANGE = 240;      // metres from the crossing that the board stand
 const ARRIVE_ZONE = 90;         // how close to the far end counts as "at the platform"
 
 export class RunScene {
-    constructor(app, chapter, camp) {
+    constructor(app, chapter, camp, order = {}) {
         this.app = app;
         this.chapter = chapter;
         this.camp = camp;
@@ -30,7 +30,10 @@ export class RunScene {
         this.route = buildRoute(R.from, R.to);
         const locoDef = LOCOS[R.loco];
         const locoState = camp.locos[R.loco];
-        this.consist = buildConsist(locoDef, locoState, R.cars.map(id => CARS[id]));
+        // The yard may have handed us a train the player made up themselves.
+        const carIds = order.cars || R.cars;
+        this.pay = (R.pay || 0) + (order.bonus || 0);
+        this.consist = buildConsist(locoDef, locoState, carIds.map(id => CARS[id]));
 
         this.env = { adhesion: R.adhesion || 'dry', ambient: (R.ambient ?? 30) + (R.cracked?.heatBias || 0) };
         this.train = makeTrainState(this.consist, { ambient: this.env.ambient });
@@ -365,25 +368,28 @@ export class RunScene {
 
             else if (hz.type === 'rockfall' && !hz.cleared) {
                 const d = hz.s - t.s;
-                if (d < 14 && d > -40) {
-                    if (Math.abs(t.v) > 1.6) {
-                        this.struckDebris = true;
-                        this.fail('Struck the rockfall at speed.');
-                        return;
+                if (d < 12 && d > -40 && Math.abs(t.v) > 1.6) {
+                    this.struckDebris = true;
+                    this.fail('Struck the rockfall at speed.');
+                    return;
+                }
+                /* Stopped short of it, the crew walk up with bars and shift it.
+                   The window is generous on purpose: the skill being tested is
+                   seeing the thing and stopping, not parking to the metre. */
+                if (d > -40 && d < 130 && Math.abs(t.v) < 0.4) {
+                    hz.clearing += dt;
+                    this.warn('caution', `CREW CLEARING THE ROAD — ${Math.max(0, 22 - hz.clearing).toFixed(0)}s`, 'clearing');
+                    if (hz.clearing > 22) {
+                        hz.cleared = true;
+                        sound.good();
+                        this.say('dell', 'Off the road and down the bank. Take her on.');
                     }
-                    // Stopped short: the crew get down and shift it.
-                    if (Math.abs(t.v) < 0.4) {
-                        hz.clearing += dt;
-                        this.warn('caution', `CLEARING DEBRIS — ${Math.max(0, 22 - hz.clearing).toFixed(0)}s`);
-                        if (hz.clearing > 22) {
-                            hz.cleared = true;
-                            sound.good();
-                            this.say('dell', 'Off the road and down the bank. Take her on.');
-                        }
-                    }
-                } else if (d < 420 && d > 0 && !hz.announced) {
+                } else if (d >= 130 && d < 520 && Math.abs(t.v) < 0.4) {
+                    this.warn('caution', `STOPPED ${Math.round(d)} M SHORT — CREEP UP TO IT`, 'creep');
+                } else if (d < 500 && d > 0 && !hz.announced) {
                     hz.announced = true;
                     this.warn('danger', 'OBSTRUCTION AHEAD');
+                    this.say('dell', 'Something on the road. Get her stopped.');
                 }
             }
 
@@ -672,6 +678,7 @@ export class RunScene {
         const t = this.train;
         return {
             success, failReason: reason || null,
+            pay: this.pay,
             time: this.elapsed,
             miles: t.distanceRun / MILE,
             spads: this.spads,

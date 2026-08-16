@@ -142,7 +142,7 @@ export const CHAPTERS = [
         from:'halloway', to:'tannery', loco:'wdm2',
         cars:['combine','boxcar','hopper','hopper','caboose'],
         hour: 4.7, weather:'clear', adhesion:'dry', ambient: 22,
-        schedule: 520, hardLimit: 760,
+        schedule: 620, hardLimit: 850,
         traffic:[
             { id:'cp-441', name:'CP 441 coal', dir:1, s:2400, v:7.5, cruise:8.5, kind:'freight', cars:9,
               takesSiding:'Wilder siding' },
@@ -180,7 +180,8 @@ export const CHAPTERS = [
 
     opening: [
         { who:'meera', lines:[
-            'Twelve loaded cars. Nine hundred tons behind the drawbar and Sabre Hill in the middle of it.',
+            'The mill has twelve cars ready. Nine hundred tons if you take the lot, and Sabre Hill in the middle of it.',
+            'How much of it you couple to is your decision. Everything you leave behind sits there another week.',
             'Here is what will happen. You will hold notch eight because you want the speed, and the water temperature will climb, and at ninety-two degrees she will pull her own power back to save herself.',
             'And then you will be doing eight miles an hour halfway up a hill with nine hundred tons pushing you back down it.',
         ]},
@@ -203,12 +204,15 @@ export const CHAPTERS = [
 
     run: {
         title: 'Tannery Flats → Coldspring',
-        orders: 'Nine hundred tons over Sabre Hill. Watch the water temperature. ' +
-                'Speed restriction of 25 through the Sabre curves — the hill will not let you go faster anyway.',
+        orders: 'As much of the mill\'s backlog as you dare take over Sabre Hill. ' +
+                'Watch the water temperature. Speed restriction of 25 through the Sabre curves — ' +
+                'the hill will not let you go faster anyway.',
         from:'tannery', to:'coldspring', loco:'wdm2',
-        cars:['hopper','hopper','hopper','hopper','hopper','boxcar','boxcar','gondola','tank','flat','flat','caboose'],
+        cars:['hopper','hopper','hopper','boxcar','tank','caboose'],
+        optional:['hopper','hopper','boxcar','gondola','flat','flat'],
+        maxCars: 12,
         hour: 9.4, weather:'clear', adhesion:'dry', ambient: 31,
-        schedule: 640, hardLimit: 980,
+        schedule: 1450, hardLimit: 1800,
         traffic:[],
         hazards:[ { type:'crossing', s:1300 }, { type:'crossing', s:5400 } ],
         radio:[
@@ -278,7 +282,7 @@ export const CHAPTERS = [
         from:'marrow', to:'coldspring', loco:'wdm2',
         cars:['medical','boxcar','reefer','combine','caboose'],
         hour: 5.9, weather:'rain', adhesion:'wet', ambient: 18,
-        schedule: 760, hardLimit: 1080,
+        schedule: 1300, hardLimit: 1650,
         traffic:[
             { id:'cp-208', name:'CP 208 manifest', dir:-1, s:9200, v:0, cruise:19, kind:'freight', cars:8, releaseAt: 40 },
         ],
@@ -343,12 +347,14 @@ export const CHAPTERS = [
 
     run: {
         title: 'Marrow Bend → Kestrel Gap',
-        orders: 'Fuel and stores to the Gap on five traction motors. ' +
+        orders: 'Fuel and stores to the Gap on five traction motors — take only what you must. ' +
                 'Wheelslip will damage the bodged motor — and if it lets go on the hill, you finish the trip on whatever is left.',
         from:'marrow', to:'kestrel', loco:'wdm2',
-        cars:['tank','tank','boxcar','flat','caboose'],
+        cars:['tank','tank','caboose'],
+        optional:['boxcar','flat','hopper','reefer'],
+        maxCars: 8,
         hour: 7.2, weather:'clear', adhesion:'dry', ambient: 28,
-        schedule: 900, hardLimit: 1320,
+        schedule: 1150, hardLimit: 1550,
         bodge: { component:'traction', failChance: 0.55, slipSensitive: true },
         traffic:[],
         hazards:[ { type:'crossing', s:1400 }, { type:'crossing', s:9200 }, { type:'crossing', s:12700 } ],
@@ -494,7 +500,7 @@ export const CHAPTERS = [
         cars:['medical','combine','caboose'],
         hour: 23.7, weather:'fog', adhesion:'wet', ambient: 9,
         night: true,
-        schedule: 900, hardLimit: 1400,
+        schedule: 1150, hardLimit: 1600,
         traffic:[],
         hazards:[
             { type:'crossing', s:1400 },
@@ -570,8 +576,10 @@ export const CHAPTERS = [
                 'Snow on the rail — adhesion is close to nothing. Manage boiler pressure or stall.',
         from:'marrow', to:'tannery', loco:'e33',
         cars:['boxcar','tank','combine'],
+        optional:['boxcar','hopper'],
+        maxCars: 5,
         hour: 6.8, weather:'snow', adhesion:'snow', ambient: -19,
-        schedule: 620, hardLimit: 1000,
+        schedule: 900, hardLimit: 1250,
         traffic:[],
         hazards:[ { type:'crossing', s:1400 }, { type:'drift', s:2600 } ],
         radio:[
@@ -639,12 +647,15 @@ export const CHAPTERS = [
 
     run: {
         title: 'Coldspring → Halloway Junction',
-        orders: 'The heaviest train Sable Valley has ever run. Every car the valley has produced this month, ' +
-                'in one movement, into the slot. Continental Pacific is watching the tape.',
+        orders: 'The heaviest train Sable Valley has ever run. Continental Pacific counts cars, ' +
+                'so every one you leave on the team track is a number Hal has to explain away. ' +
+                'They are watching the tape.',
         from:'coldspring', to:'halloway', loco:'wdm2',
-        cars:['cryo','reefer','boxcar','boxcar','hopper','hopper','gondola','tank','flat','combine','caboose'],
+        cars:['cryo','reefer','combine','caboose'],
+        optional:['boxcar','boxcar','hopper','hopper','gondola','tank','flat','reefer'],
+        maxCars: 13,
         hour: 15.4, weather:'clear', adhesion:'dry', ambient: 39,
-        schedule: 1320, hardLimit: 1750,
+        schedule: 1500, hardLimit: 1900,
         shockLimit: 0.72,
         traffic:[
             { id:'cp-311', name:'CP 311 grain', dir:-1, s:9800, v:0, cruise:17, kind:'freight', cars:10, releaseAt: 90 },
@@ -733,7 +744,7 @@ export const CHAPTERS = [
         cars:['medical','combine'],
         hour: 3.6, weather:'clear', adhesion:'dry', ambient: 26,
         night: true,
-        schedule: 1000, hardLimit: 1280,
+        schedule: 1350, hardLimit: 1700,
         shockLimit: 0.55,
         cracked: { powerScale: 0.7, heatBias: 22 },
         traffic:[

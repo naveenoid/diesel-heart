@@ -397,9 +397,13 @@ export function drawHUD(ctx, v) {
 
     // Heat, or boiler pressure — the machine's own opinion of what you are doing
     if (isSteam) {
+        // The arrow is the whole skill: is the fire winning, or the regulator?
+        const trend = t.steamTrend > 0.15 ? '\u25B2' : t.steamTrend < -0.15 ? '\u25BC' : '\u2014';
         bar(ctx, gx + 38, gy, 22, 118, t.steam / loco.steamMax,
             t.steam < 30 ? '#ff3a22' : t.steam < 55 ? '#e8a838' : '#6fa8c8',
-            { caption: 'STEAM', mark: 0.3 });
+            { caption: `STEAM ${trend}`, mark: 0.3 });
+        label(ctx, `${Math.round(t.steam)}`, gx + 49, gy - 4, 8,
+            t.steam < 30 ? '#ff3a22' : '#8c8474', 'center');
     } else {
         const frac = Math.max(0, Math.min(1, (t.heat - 20) / (loco.heatRedline + 18 - 20)));
         bar(ctx, gx + 38, gy, 22, 118, frac,

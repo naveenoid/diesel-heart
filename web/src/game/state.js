@@ -24,7 +24,6 @@ export function newCampaign() {
         crew: 60,                     // how the crew are holding up, 0..100
         morale: { marrow: 55, tannery: 55, coldspring: 55, kestrel: 55 },
         flags: {},
-        parts: { radiator: 0, injector: 0, brakeshoe: 2, motorbrush: 1 },
         locos: {
             wdm2:   newLocoState('wdm2'),
             rs3:    newLocoState('rs3'),
@@ -51,7 +50,8 @@ export const REPAIRS = [
       note:'The thing Meera has wanted since August.' },
 
     { id:'bodge-prime',     comp:'prime',    label:'Jugaad: swap a good injector across',  cost: 260, gain: 42, jugaad:true, risk:0.28,
-      note:'Robs a spare from Rusty. Rusty will notice eventually.' },
+      steal:{ loco:'rs3', comp:'prime', amount:16 },
+      note:'Robs a spare off Rusty. Rusty will notice eventually.' },
     { id:'bodge-traction',  comp:'traction', label:'Jugaad: shim the brush gear',          cost: 180, gain: 38, jugaad:true, risk:0.34,
       note:'Holds if you never let her slip. Never is a strong word.' },
     { id:'bodge-brakes',    comp:'brakes',   label:'Jugaad: turn the shoes and re-pin',    cost: 140, gain: 34, jugaad:true, risk:0.22,
@@ -68,7 +68,8 @@ export function settleRun(camp, chapter, result) {
     const lines = [];
     let money = 0;
 
-    const basePay = chapter.run.pay || 0;
+    // Pay follows the train the player actually made up, not the booked minimum.
+    const basePay = R.pay ?? chapter.run.pay ?? 0;
     money += basePay;
     if (basePay) lines.push({ label: chapter.run.title, amount: basePay });
 

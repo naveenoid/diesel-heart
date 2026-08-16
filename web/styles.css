@@ -118,6 +118,7 @@ html, body {
     border: 1px solid #3d444b;
     border-radius: 2px;
     cursor: pointer;
+    white-space: nowrap;          /* "do it" must never wrap to two lines */
     transition: background .12s, border-color .12s, transform .06s;
 }
 .btn:hover { background: linear-gradient(#373e46, #23282e); border-color: var(--brass-dim); }
@@ -208,6 +209,7 @@ table.ledger td.num { text-align: right; font-variant-numeric: tabular-nums; }
     text-transform: none;
     padding: 12px 16px;
     line-height: 1.5;
+    white-space: normal;   /* a spoken line is a sentence, and sentences wrap */
 }
 
 /* ── Toast (in-run notices that outlive a single frame) ── */

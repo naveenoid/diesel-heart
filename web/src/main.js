@@ -9,7 +9,7 @@ import { CHAPTERS } from './data/story.js';
 import { newCampaign, settleRun, applyEffect } from './game/state.js';
 import { RunScene } from './game/run.js';
 import { IdleScene, titleScreen, chapterCard, briefing, debrief, epilogue } from './scenes/screens.js';
-import { depotScreen, platformScreen } from './scenes/depot.js';
+import { depotScreen, platformScreen, composeScreen } from './scenes/depot.js';
 import { mountOverlay, playDialogue, clearOverlay, prompt } from './scenes/ui.js';
 import { sound } from './audio.js';
 import * as SaveFile from './save.js';
@@ -116,11 +116,11 @@ class App {
 
     /* ── Running a trip ──────────────────────────────────────────────────── */
 
-    playRun(chapter, camp) {
+    playRun(chapter, camp, order) {
         return new Promise(resolve => {
             this.runResolve = resolve;
             clearOverlay();
-            this.setScene(new RunScene(this, chapter, camp));
+            this.setScene(new RunScene(this, chapter, camp, order));
         });
     }
 
@@ -162,10 +162,12 @@ class App {
             // The shed opens once the tutorial chapters are behind you.
             if (camp.chapter >= 2) await depotScreen(camp, ch);
             await platformScreen(camp, ch);
-            await briefing(ch, camp);
+            // Chapters that offer a choice of lading get made up in the yard.
+            const order = ch.run.optional ? await composeScreen(camp, ch) : {};
+            await briefing(ch, camp, order.cars);
 
             for (;;) {
-                const result = await this.playRun(ch, camp);
+                const result = await this.playRun(ch, camp, order);
                 this.setScene(new IdleScene({
                     hour: ch.run.hour, weather: ch.run.weather,
                     loco: ch.run.loco, cars: ch.run.cars.slice(0, 2),

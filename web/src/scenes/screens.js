@@ -161,12 +161,12 @@ export async function chapterCard(ch, n) {
 }
 
 /* ── Briefing ────────────────────────────────────────────────────────────── */
-export async function briefing(ch, camp) {
+export async function briefing(ch, camp, carIds) {
     const R = ch.run;
     const route = buildRoute(R.from, R.to);
     const loco = LOCOS[R.loco];
     const ls = camp.locos[R.loco];
-    const cars = R.cars.map(id => CARS[id]);
+    const cars = (carIds || R.cars).map(id => CARS[id]);
     const consist = buildConsist(loco, ls, cars);
     const climb = routeClimb(route);
 

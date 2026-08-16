@@ -47,6 +47,7 @@ export function makeTrainState(consist, opts = {}) {
         sanders: false,
         heat: opts.ambient ?? 34,
         steam: isSteam ? 100 : 0,
+        steamTrend: 0,
         fuel: opts.fuel ?? 100,
         slack: 0, slackVel: 0,
         shock: 0, peakShock: 0,
@@ -58,6 +59,40 @@ export function makeTrainState(consist, opts = {}) {
         distanceRun: 0,
         wearTraction: 0, wearBrakes: 0, wearPrime: 0, wearCooling: 0,
     };
+}
+
+/**
+ * The largest fraction of rated power the machine can hold indefinitely without
+ * cooking itself (diesel) or running its boiler down (steam). This — not the
+ * headline rating — is what a hill actually gets.
+ */
+export function sustainablePower(loco, locoState, ambient = 30) {
+    if (loco.kind === 'steam') return 0.8;
+    if (!loco.heatRedline) return 1;
+    const cool = (locoState?.cond?.cooling ?? 100) / 100;
+    // Invert the heat target: ambient + 78·p^1.65·(1.35−0.35·cool) + 10(1−cool) = redline
+    const head = loco.heatRedline - ambient - 10 * (1 - cool);
+    if (head <= 0) return 0.25;
+    const frac = head / (78 * (1.35 - 0.35 * cool));
+    return Math.max(0.25, Math.min(1, Math.pow(frac, 1 / 1.65)));
+}
+
+/**
+ * The speed a locomotive will settle at on a sustained grade with a given
+ * trailing load — the number that decides whether a train is a train or a
+ * stalled train. Used by the yard to tell you what you have just built.
+ */
+export function rulingSpeed(loco, mass, grade, adhesion = 'dry', locoState = null, ambient = 30) {
+    const mu = ADHESION[adhesion] ?? ADHESION.dry;
+    const p = sustainablePower(loco, locoState, ambient);
+    let lo = 0, hi = loco.maxSpeed;
+    for (let i = 0; i < 40; i++) {
+        const v = (lo + hi) / 2;
+        const te = Math.min(loco.teMax, mu * loco.mass * G, loco.power * p / Math.max(1.6, v));
+        const a = te / mass - G * grade - (0.0055 + 0.00042 * v + 0.0000175 * v * v);
+        if (a > 0) lo = v; else hi = v;
+    }
+    return lo < 0.4 ? 0 : lo;
 }
 
 /** How far it takes to stop from `v` under a given deceleration, plus reaction. */
@@ -93,7 +128,9 @@ export function stepTrain(t, consist, route, env, dt) {
     if (isSteam) {
         const drain = loco.steamDrain * cmd * (0.55 + Math.min(1.4, t.v / 9));
         const gain  = loco.steamRecover * (1 - cmd * 0.85);
+        const before = t.steam;
         t.steam = Math.max(0, Math.min(loco.steamMax, t.steam - drain * dt + gain * dt));
+        t.steamTrend = dt > 0 ? (t.steam - before) / dt : 0;
         // Below a third of a glass she simply cannot make the power.
         steamScale = Math.min(1, 0.25 + 0.75 * (t.steam / 38));
         if (t.steam < 6 && cmd > 0.4) events.push({ type: 'steamlow' });

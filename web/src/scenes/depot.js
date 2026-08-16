@@ -8,8 +8,10 @@
 
    The platform is where you find out what any of it was for. */
 
-import { LOCOS, COMPONENTS, locoHealth } from '../data/roster.js';
+import { LOCOS, CARS, COMPONENTS, locoHealth } from '../data/roster.js';
 import { REPAIRS, TOWNS, standing, valleyHealth } from '../game/state.js';
+import { buildRoute } from '../data/routes.js';
+import { rulingSpeed, mph } from '../game/physics.js';
 import { show, prompt, esc, money, condBar, clearOverlay } from './ui.js';
 import { sound } from '../audio.js';
 
@@ -63,7 +65,8 @@ export function depotScreen(camp, chapter) {
                     <td>
                         <div style="color:${r.jugaad ? '#d1a04a' : '#d8cdb8'}">${esc(r.label)}</div>
                         <div style="font-size:11px;color:#8d8676">${esc(r.note)}${
-                            r.jugaad ? ` <span class="warn">· ${Math.round(r.risk * 100)}% chance of failing under load</span>` : ''}</div>
+                            r.jugaad ? ` <span class="warn">· ${Math.round(r.risk * 100)}% chance of failing under load</span>` : ''}${
+                            r.steal && r.steal.loco !== sel ? ` <span class="bad">· costs ${esc(LOCOS[r.steal.loco].road)} ${r.steal.amount}%</span>` : ''}</div>
                     </td>
                     <td class="num">+${Math.round(gain)}</td>
                     <td class="num ${broke ? 'bad' : ''}">${money(-r.cost)}</td>
@@ -87,8 +90,12 @@ export function depotScreen(camp, chapter) {
                 <table class="ledger" style="margin-top:12px">
                     <tr>
                         <td>In hand</td><td class="num ${camp.money < 500 ? 'bad' : ''}"><strong>${money(camp.money)}</strong></td>
-                        <td>Standing with CP</td><td style="width:110px">${condBar(camp.rep)}</td>
-                        <td>Crew</td><td style="width:110px">${condBar(camp.crew)}</td>
+                        <td>Standing with CP</td>
+                        <td style="width:110px">${condBar(camp.rep)}</td>
+                        <td class="num ${camp.rep > 55 ? 'good' : camp.rep > 25 ? 'warn' : 'bad'}">${Math.round(camp.rep)}</td>
+                        <td>Crew</td>
+                        <td style="width:110px">${condBar(camp.crew)}</td>
+                        <td class="num ${camp.crew > 55 ? 'good' : camp.crew > 30 ? 'warn' : 'bad'}">${Math.round(camp.crew)}</td>
                     </tr>
                 </table>
 
@@ -125,12 +132,136 @@ export function depotScreen(camp, chapter) {
                     ls.cond[r.comp] = r.jugaad ? Math.min(100, cur + r.gain) : 100;
                     if (r.jugaad) ls.bodges[r.comp] = { risk: r.risk };
                     else delete ls.bodges[r.comp];
+                    // Some fixes are robbing one machine to keep another going.
+                    // That is the whole economy of a shortline, so make it real.
+                    if (r.steal && camp.locos[r.steal.loco] && r.steal.loco !== sel) {
+                        const victim = camp.locos[r.steal.loco];
+                        victim.cond[r.steal.comp] = Math.max(0, victim.cond[r.steal.comp] - r.steal.amount);
+                    }
                     sound.clunk();
                     render();
                 };
             });
 
             el.querySelector('[data-done]').onclick = () => { clearOverlay(); resolve(); };
+        };
+
+        render();
+    });
+}
+
+/* ── Composing the train ──────────────────────────────────────────────────────
+   The decision the whole run hangs on, made before the run starts. Every extra
+   car is revenue the valley needs and a slower, longer, slacker train on a hill
+   that does not care about revenue.
+
+   The ruling-grade readout is the honest answer: this is the speed she will
+   actually settle at on the worst grade of the trip, with this much behind her.
+   If it says four miles an hour, you have built the wrong train. */
+
+export function composeScreen(camp, chapter) {
+    const R = chapter.run;
+    const loco = LOCOS[R.loco];
+    const ls = camp.locos[R.loco];
+    const route = buildRoute(R.from, R.to);
+
+    // Worst sustained grade on the trip — what the train has to be built for.
+    let ruling = 0, rulingAt = 0;
+    for (let s = 0; s < route.length; s += 25) {
+        const g = route.gradeSmooth(s);
+        if (g > ruling) { ruling = g; rulingAt = s; }
+    }
+
+    const optional = (R.optional || []).map((id, i) => ({ key: `${id}#${i}`, id }));
+
+    return new Promise(resolve => {
+        const taken = new Set();
+
+        const render = () => {
+            const cars = [...R.cars.map(id => CARS[id]),
+                          ...optional.filter(o => taken.has(o.key)).map(o => CARS[o.id])];
+            const trailing = cars.reduce((a, c) => a + c.mass, 0);
+            const length = cars.reduce((a, c) => a + c.len, 0) + 22;
+            const revenue = cars.reduce((a, c) => a + c.pay, 0);
+            const total = trailing + loco.mass;
+            // Sustained, not flat out: what she will actually hold up there.
+            const v = rulingSpeed(loco, total, ruling, R.adhesion || 'dry', ls, R.ambient ?? 30);
+            const cap = R.maxCars ?? 99;
+            const atCap = cars.length >= cap;        // no room for another
+            const over  = cars.length > cap;         // should not happen; guard anyway
+
+            const vCls = v < 2 ? 'bad' : v < 4.5 ? 'warn' : 'good';
+            const vTxt = v < 0.5 ? 'SHE WILL STALL ON THE GRADE'
+                                 : `${Math.round(mph(v))} mph sustained on the ruling grade`;
+
+            const optCards = optional.map(o => {
+                const c = CARS[o.id];
+                const sel = taken.has(o.key);
+                const blocked = !sel && atCap;
+                return `
+                <div class="card ${sel ? 'sel' : ''} ${blocked ? 'locked' : ''}" data-opt="${esc(o.key)}">
+                    <div class="nm">${esc(c.name)}</div>
+                    <div class="sub">${Math.round(c.mass / 1000)} t · ${c.len.toFixed(1)} m</div>
+                    <div class="meta">
+                        ${money(c.pay)}${c.fragility > 0.5 ? ' · <span class="warn">fragile</span>' : ''}<br>
+                        ${esc(c.desc)}
+                    </div>
+                </div>`;
+            }).join('');
+
+            const fixedRows = R.cars.map(id => {
+                const c = CARS[id];
+                return `<tr><td>${esc(c.name)}</td><td class="num">${Math.round(c.mass / 1000)} t</td>
+                        <td class="num">${money(c.pay)}</td><td style="font-size:11px;color:#8d8676">${esc(c.desc)}</td></tr>`;
+            }).join('');
+
+            const el = show(`
+                <h2>Marrow Bend — making up the train</h2>
+                <h1>${esc(R.title)}</h1>
+                <p>${esc(R.orders)}</p>
+
+                <h3>Booked — these are going whatever you decide</h3>
+                <table class="ledger">${fixedRows}</table>
+
+                <h3>On the team track — take what you can pull</h3>
+                <div class="cards">${optCards}</div>
+
+                <h3>What you have built</h3>
+                <table class="ledger">
+                    <tr><td>Cars</td><td class="num ${over ? 'bad' : ''}">${cars.length}${R.maxCars ? ` / ${R.maxCars}` : ''}</td>
+                        <td>Trailing</td><td class="num">${Math.round(trailing / 1000)} t</td>
+                        <td>Length</td><td class="num">${Math.round(length)} m</td></tr>
+                    <tr><td>Revenue on offer</td><td class="num good">${money(revenue)}</td>
+                        <td>Ruling grade</td><td class="num">${(ruling * 100).toFixed(1)}% at MP ${route.mpAt(rulingAt).toFixed(1)}</td>
+                        <td colspan="2" class="${vCls}"><strong>${vTxt}</strong></td></tr>
+                </table>
+                ${v < 2 ? '<p class="bad"><em>Meera, without looking up: that is more than she will lift. ' +
+                          'You will be backing down to the last siding in the dark.</em></p>' : ''}
+                ${over ? '<p class="bad"><em>Longer than the loops. You would not fit in a siding, and today you need to.</em></p>' : ''}
+            `);
+
+            el.querySelectorAll('[data-opt]').forEach(card => {
+                card.onclick = () => {
+                    const k = card.dataset.opt;
+                    if (taken.has(k)) taken.delete(k);
+                    else if (!atCap) taken.add(k);
+                    sound.blip(taken.has(k) ? 700 : 480, 0.05);
+                    render();
+                };
+            });
+
+            const row = document.createElement('div');
+            row.className = 'btn-row';
+            row.innerHTML = `<button class="btn primary" ${over ? 'disabled' : ''} data-go>Couple up and go</button>`;
+            el.appendChild(row);
+            el.querySelector('[data-go]').onclick = () => {
+                clearOverlay();
+                resolve({
+                    cars: [...R.cars, ...optional.filter(o => taken.has(o.key)).map(o => o.id)],
+                    bonus: optional.filter(o => taken.has(o.key)).reduce((a, o) => a + CARS[o.id].pay, 0),
+                });
+            };
+            el.scrollTop = 0;
         };
 
         render();

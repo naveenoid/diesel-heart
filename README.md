@@ -51,6 +51,14 @@ CP. The amber dashed line is where you would stop if you put the brake in *now*.
 Signals are absolute. A red passed is a SPAD, and a SPAD is how a short line
 stops being a railway.
 
+### The platform
+
+Before several trips you make the train up yourself. Every optional car on the
+team track is revenue the valley needs and one more car to drag over Sabre Hill,
+so the yard tells you the only number that matters: the speed she will actually
+settle at on the ruling grade with that much behind her. If it says four miles
+an hour, you have built the wrong train — and Meera will say so.
+
 ### The shed
 
 Between trips, money turns into machinery — and the game asks its real question:
