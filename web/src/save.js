@@ -2,7 +2,7 @@
    One slot, localStorage, written after every chapter. A short line does not
    keep duplicate records of anything. */
 
-const KEY = 'diesel-heart/save/v3';
+const KEY = 'diesel-heart/save/v4';
 
 export function save(camp) {
     try {
@@ -18,7 +18,7 @@ export function load() {
         const raw = localStorage.getItem(KEY);
         if (!raw) return null;
         const c = JSON.parse(raw);
-        return (c && c.version === 3) ? c : null;
+        return (c && c.version === 4) ? c : null;
     } catch {
         return null;
     }

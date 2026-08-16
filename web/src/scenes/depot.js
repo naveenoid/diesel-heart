@@ -8,8 +8,8 @@
 
    The platform is where you find out what any of it was for. */
 
-import { LOCOS, CARS, COMPONENTS, locoHealth } from '../data/roster.js';
-import { REPAIRS, TOWNS, standing, valleyHealth } from '../game/state.js';
+import { LOCOS, CARS, componentsFor, locoHealth } from '../data/roster.js';
+import { REPAIRS, CARE_ACTIONS, TOWNS, standing, valleyHealth, baggageMass } from '../game/state.js';
 import { buildRoute } from '../data/routes.js';
 import { rulingSpeed, mph } from '../game/physics.js';
 import { show, prompt, esc, money, condBar, clearOverlay } from './ui.js';
@@ -42,7 +42,7 @@ export function depotScreen(camp, chapter) {
                 </div>`;
             }).join('');
 
-            const compRows = COMPONENTS.map(c => {
+            const compRows = componentsFor(sel).map(c => {
                 const v = ls.cond[c.id];
                 const bodged = ls.bodges[c.id];
                 return `
@@ -76,7 +76,7 @@ export function depotScreen(camp, chapter) {
             }).join('');
 
             const townRows = Object.entries(TOWNS).map(([id, t]) => {
-                const m = camp.morale[id];
+                const m = camp.towns[id] ?? 50;
                 return `<tr><td>${esc(t.name)}</td><td class="num" style="color:#8d8676">${t.pop}</td>
                     <td style="width:110px">${condBar(m)}</td>
                     <td class="num ${m > 60 ? 'good' : m > 38 ? 'warn' : 'bad'}">${Math.round(m)}</td></tr>`;
@@ -89,13 +89,30 @@ export function depotScreen(camp, chapter) {
 
                 <table class="ledger" style="margin-top:12px">
                     <tr>
-                        <td>In hand</td><td class="num ${camp.money < 500 ? 'bad' : ''}"><strong>${money(camp.money)}</strong></td>
+                        <td><strong>Goodwill</strong></td>
+                        <td style="width:150px">${condBar(camp.goodwill)}</td>
+                        <td class="num ${camp.goodwill > 58 ? 'good' : camp.goodwill > 30 ? 'warn' : 'bad'}"><strong>${Math.round(camp.goodwill)}</strong></td>
+                        <td colspan="2" style="font-size:11px;color:#8d8676">
+                            This is the score. Everything else is how you keep the doors open.</td>
+                    </tr>
+                    <tr>
+                        <td>In hand</td>
+                        <td class="num ${camp.money < 500 ? 'bad' : ''}">${money(camp.money)}</td>
+                        <td colspan="3" style="font-size:11px;color:#8d8676">
+                            Fuel, parts and wages. Below zero the railway stops.</td>
+                    </tr>
+                    <tr>
+                        <td>Baggage today</td>
+                        <td class="num ${baggageMass(camp) > 22000 ? 'warn' : 'good'}">${Math.round(baggageMass(camp) / 1000)} t</td>
+                        <td colspan="3" style="font-size:11px;color:#8d8676">
+                            What the valley has not finished asking of us. Goodwill lightens it.</td>
+                    </tr>
+                    <tr>
                         <td>Standing with CP</td>
                         <td style="width:110px">${condBar(camp.rep)}</td>
                         <td class="num ${camp.rep > 55 ? 'good' : camp.rep > 25 ? 'warn' : 'bad'}">${Math.round(camp.rep)}</td>
                         <td>Crew</td>
                         <td style="width:110px">${condBar(camp.crew)}</td>
-                        <td class="num ${camp.crew > 55 ? 'good' : camp.crew > 30 ? 'warn' : 'bad'}">${Math.round(camp.crew)}</td>
                     </tr>
                 </table>
 
@@ -104,6 +121,26 @@ export function depotScreen(camp, chapter) {
 
                 <h3>${esc(LOCOS[sel].road)} ${esc(LOCOS[sel].name)} — condition</h3>
                 <table class="ledger">${compRows}</table>
+
+                ${sel === 'e33' ? `
+                <h3>Looking after her</h3>
+                <table class="ledger">
+                    <tr>
+                        <td>Care</td>
+                        <td style="width:150px">${condBar(ls.care ?? 0)}</td>
+                        <td class="num ${(ls.care ?? 0) > 60 ? 'good' : (ls.care ?? 0) > 30 ? 'warn' : 'bad'}">${Math.round(ls.care ?? 0)}</td>
+                        <td style="font-size:11px;color:#8d8676">
+                            Below thirty she will blow a joint if you work her hard. She always gives warning; the warning is this number.</td>
+                    </tr>
+                    ${CARE_ACTIONS.map(a => `
+                    <tr>
+                        <td><div style="color:#d1a04a">${esc(a.label)}</div>
+                            <div style="font-size:11px;color:#8d8676">${esc(a.note)}</div></td>
+                        <td class="num">+${a.gain}</td>
+                        <td class="num ${camp.money < a.cost ? 'bad' : ''}">${money(-a.cost)}</td>
+                        <td><button class="btn" data-care="${esc(a.id)}"${camp.money < a.cost || (ls.care ?? 0) >= 100 ? ' disabled' : ''}>do it</button></td>
+                    </tr>`).join('')}
+                </table>` : ''}
 
                 <h3>Work Meera can do this week</h3>
                 <table class="ledger">
@@ -138,6 +175,18 @@ export function depotScreen(camp, chapter) {
                         const victim = camp.locos[r.steal.loco];
                         victim.cond[r.steal.comp] = Math.max(0, victim.cond[r.steal.comp] - r.steal.amount);
                     }
+                    sound.clunk();
+                    render();
+                };
+            });
+
+            el.querySelectorAll('[data-care]').forEach(b => {
+                b.onclick = () => {
+                    const a = CARE_ACTIONS.find(x => x.id === b.dataset.care);
+                    if (!a || camp.money < a.cost) return;
+                    camp.money -= a.cost;
+                    ls.care = Math.min(100, (ls.care ?? 0) + a.gain);
+                    if (a.goodwill) camp.goodwill = Math.min(100, camp.goodwill + a.goodwill);
                     sound.clunk();
                     render();
                 };
@@ -227,6 +276,17 @@ export function composeScreen(camp, chapter) {
                 <div class="cards">${optCards}</div>
 
                 <h3>What you have built</h3>
+                ${(() => {
+                    const ppl = cars.filter(c => c.kind === 'people').length;
+                    const sci = cars.filter(c => c.kind === 'science').length;
+                    const leftPpl = optional.filter(o => !taken.has(o.key) && CARS[o.id].kind === 'people').length;
+                    if (!ppl && !leftPpl) return '';
+                    if (!ppl) return '<p class="bad"><em>Not one vehicle of people. It will pay, and it will be ' +
+                                     'noticed, and the noticing is what costs you.</em></p>';
+                    if (leftPpl) return `<p class="warn"><em>${leftPpl} passenger vehicle${leftPpl > 1 ? 's' : ''} ` +
+                                     'still on the platform. They will wait. That is the problem.</em></p>';
+                    return `<p class="good"><em>${ppl} of ${ppl + sci} vehicles are people. Good.</em></p>`;
+                })()}
                 <table class="ledger">
                     <tr><td>Cars</td><td class="num ${over ? 'bad' : ''}">${cars.length}${R.maxCars ? ` / ${R.maxCars}` : ''}</td>
                         <td>Trailing</td><td class="num">${Math.round(trailing / 1000)} t</td>
@@ -256,9 +316,12 @@ export function composeScreen(camp, chapter) {
             el.appendChild(row);
             el.querySelector('[data-go]').onclick = () => {
                 clearOverlay();
+                const left = optional.filter(o => !taken.has(o.key));
                 resolve({
                     cars: [...R.cars, ...optional.filter(o => taken.has(o.key)).map(o => o.id)],
                     bonus: optional.filter(o => taken.has(o.key)).reduce((a, o) => a + CARS[o.id].pay, 0),
+                    // People you decided not to carry are the whole moral of the game.
+                    refusedPeople: left.filter(o => CARS[o.id].kind === 'people').length,
                 });
             };
             el.scrollTop = 0;
@@ -273,20 +336,26 @@ export function composeScreen(camp, chapter) {
 /** Who is standing at Marrow Bend this morning, and what it costs if you fail. */
 export async function platformScreen(camp, chapter) {
     const v = valleyHealth(camp);
-    const worst = Object.entries(camp.morale).sort((a, b) => a[1] - b[1])[0];
-    const best = Object.entries(camp.morale).sort((a, b) => b[1] - a[1])[0];
+    const worst = Object.entries(camp.towns).sort((a, b) => a[1] - b[1])[0];
+    const best = Object.entries(camp.towns).sort((a, b) => b[1] - a[1])[0];
 
     const vignettes = [];
-    if (camp.morale.coldspring < 45)
+    if (camp.towns.coldspring < 45)
         vignettes.push('A woman from Coldspring asks, without accusation, whether the Thursday train is going to be Thursday this week.');
-    if (camp.morale.tannery < 45)
+    if (camp.towns.tannery < 45)
         vignettes.push('Two mill hands are reading a notice about shift reductions. They stop when they see you.');
-    if (camp.morale.marrow > 70)
+    if (camp.towns.marrow > 70)
         vignettes.push('Somebody has left a tin of biscuits on the ticket window with a note that just says <em>17</em>.');
     if (camp.crew < 40)
         vignettes.push('Dell is asleep sitting up in the caboose. Nobody wakes him.');
     if (camp.money < 800)
         vignettes.push('The fuel invoice is on the desk with a second, politer letter clipped to it.');
+    if (camp.goodwill > 70)
+        vignettes.push('Dhanam Aunty has the tea out before you ask, and will not take the money. ' +
+                       '<em>"Poitu vaanga"</em>, she says — go, and come back.');
+    if (camp.goodwill < 30)
+        vignettes.push('The bus company has put a timetable board up at the end of the platform. ' +
+                       'Nobody has taken it down.');
     if (!vignettes.length)
         vignettes.push('The platform is quiet. Somebody has swept it, which nobody is paid to do.');
 

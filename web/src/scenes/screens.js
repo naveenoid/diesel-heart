@@ -242,6 +242,8 @@ export async function debrief(ch, result, settlement, camp) {
     if (result.derated)         notes.push('The engine derated to protect itself.');
     if (result.stalled)         notes.push('Stalled on the grade.');
     if (result.bodgeFailed)     notes.push('Meera\'s shim let go.');
+    if (result.blowout)         notes.push('The Missus blew a joint and finished the trip on half a boiler.');
+    if (result.abbDamaged)      notes.push('The ABB device recorded a shock event.');
     if (result.missedWhistle)   notes.push(`${result.missedWhistle} crossing${result.missedWhistle > 1 ? 's' : ''} taken without a whistle.`);
     if (result.overspeedSecs > 1.5)
         notes.push(`${Math.round(result.overspeedSecs)}s over the permitted speed, peaking ${Math.round(result.worstOverspeed)} mph above it.`);
@@ -268,7 +270,19 @@ export async function debrief(ch, result, settlement, camp) {
         </table>
         ${notes.length ? `<p style="margin-top:10px">${notes.map(esc).join(' ')}</p>` : ''}
 
-        <h3>Settlement</h3>
+        <h3>Goodwill</h3>
+        <table class="ledger">
+            ${(settlement.gw || []).map(l => `<tr><td>${esc(l.label)}</td>
+                <td class="num ${l.amount < 0 ? 'bad' : 'good'}">${l.amount > 0 ? '+' : ''}${Math.round(l.amount)}</td></tr>`).join('')}
+            <tr><td><strong>Change</strong></td>
+                <td class="num"><strong class="${settlement.goodwillDelta < 0 ? 'bad' : 'good'}">${
+                    settlement.goodwillDelta > 0 ? '+' : ''}${Math.round(settlement.goodwillDelta || 0)}</strong></td></tr>
+            <tr><td>Standing in the valley</td>
+                <td class="num ${camp.goodwill > 58 ? 'good' : camp.goodwill > 30 ? 'warn' : 'bad'}">
+                    <strong>${Math.round(camp.goodwill)}</strong></td></tr>
+        </table>
+
+        <h3>The books</h3>
         <table class="ledger">
             ${lines}
             <tr><td><strong>Net</strong></td><td class="num"><strong class="${settlement.net < 0 ? 'bad' : 'good'}">${money(settlement.net)}</strong></td></tr>
@@ -281,6 +295,13 @@ export async function debrief(ch, result, settlement, camp) {
 /* ── Epilogue ────────────────────────────────────────────────────────────── */
 export async function epilogue(camp) {
     const s = camp.stats;
+    const gw = Math.round(camp.goodwill);
+    const verdict =
+        gw > 78 ? 'The valley does not describe you as a railway any more. It describes you as ours.'
+      : gw > 58 ? 'People plan their day around your timetable. There is no higher compliment in this business.'
+      : gw > 38 ? 'You kept it running. On the days it counted, you were there.'
+      : 'You kept the books straight. The valley noticed what that cost it.';
+
     return prompt(`
         <h2>Sable Valley Railway</h2>
         <h1>The load needs pulling</h1>
@@ -288,20 +309,42 @@ export async function epilogue(camp) {
            in the caboose with a flask and an opinion about your braking, and the
            opinion is usually right.</p>
         <p>Meera fitted the new head in April, out of Peregrine money, and kept the
-           cracked one on the wall of the shed where everyone can see it.</p>
+           cracked one on the wall of the shed where everyone can see it. The Fox
+           and Gundu are still shunting Kottapuram at six every morning, and still,
+           somehow, the reason anybody turns up.</p>
         <p>Halvard Ines moved the slot to 06:15. He never mentioned it. It simply
            appeared on the sheet one Tuesday.</p>
+        <p>Dhanam Aunty has not retired. She has said she is retiring since 2011.</p>
         <p>Tomas Weir passed his medical in the autumn. He is not old enough to hold
            a licence yet. He is old enough to be told to stand back from the fence,
            and he no longer needs telling.</p>
+        ${camp.abbIntact ? `<p><em>And the ABB device came off the wagon at Baden's expense in June, and went
+           into a shed at Marrow Bend with a tarpaulin over it and a date on the
+           door. Converter trial, phase one. Somebody has already painted over the
+           date twice to correct it. It will be the backbone of this railway. Not
+           yet. But it got here unshaken, and that is the whole of why.</em></p>`
+        : `<p><em>The ABB device went back to Baden for inspection and did not come
+           back. Nobody blamed anyone out loud. Meera kept the shock log in the
+           drawer with the cracked cylinder head, and if you ask her about it she
+           will change the subject to something mechanical.</em></p>`}
         <hr class="rule">
         <table class="ledger">
+            <tr><td><strong>Goodwill</strong></td>
+                <td style="width:160px">${condBar(camp.goodwill)}</td>
+                <td class="num"><strong class="${gw > 58 ? 'good' : gw > 30 ? 'warn' : 'bad'}">${gw}</strong></td></tr>
+            <tr><td colspan="3"><em>${esc(verdict)}</em></td></tr>
+        </table>
+        <table class="ledger" style="margin-top:14px">
             <tr><td>Trips run</td><td class="num">${s.runs}</td>
                 <td>Miles</td><td class="num">${Math.round(s.miles)}</td></tr>
+            <tr><td>People vehicles hauled</td><td class="num good">${camp.hauled.people}</td>
+                <td>Science vehicles hauled</td><td class="num">${camp.hauled.science}</td></tr>
+            <tr><td>Festivals worked</td><td class="num">${s.festivals}</td>
+                <td>Rescues</td><td class="num">${s.rescues}</td></tr>
             <tr><td>In the slot</td><td class="num">${s.onTime}</td>
                 <td>Clean trips</td><td class="num">${s.perfect}</td></tr>
             <tr><td>Signals passed at danger</td><td class="num ${s.spads ? 'bad' : 'good'}">${s.spads}</td>
-                <td>Emergency applications</td><td class="num">${s.emergencies}</td></tr>
+                <td>In hand</td><td class="num">${money(camp.money)}</td></tr>
         </table>
         <p style="margin-top:18px"><em>Dhuk. Dhuk. Dhuk.</em></p>
     `, [{ id: 'end', label: 'Back to the shed', cls: 'primary' }]);

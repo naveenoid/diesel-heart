@@ -14,6 +14,7 @@ import { drawWorld, drawAtmosphere, skyFor, Weather, PPM, trackPoint } from '../
 import { drawPlayerTrain, drawTrafficTrain, Plume, stackPoint } from '../render/trains.js';
 import { drawHUD, fmtTime } from '../render/hud.js';
 import { CHARACTERS } from '../data/story.js';
+import { baggageMass, blowoutRisk } from './state.js';
 import { sound } from '../audio.js';
 
 const W = 1280, H = 720;
@@ -31,9 +32,26 @@ export class RunScene {
         const locoDef = LOCOS[R.loco];
         const locoState = camp.locos[R.loco];
         // The yard may have handed us a train the player made up themselves.
-        const carIds = order.cars || R.cars;
+        const carIds = [...(order.cars || R.cars)];
         this.pay = (R.pay || 0) + (order.bonus || 0);
-        this.consist = buildConsist(locoDef, locoState, carIds.map(id => CARS[id]));
+        this.refusedPeople = order.refusedPeople || 0;
+
+        /* Velaikkaran and the Missus never travel light: the baggage car goes
+           wherever they go. Its weight is the valley's opinion of us, made
+           physical — thirty tonnes when nobody trusts us, under ten when they
+           do, because by then most of it has been dealt with by somebody who
+           wanted to help. */
+        this.baggageKg = 0;
+        if (locoDef.carriesBaggage && !R.noBaggage) {
+            this.baggageKg = baggageMass(camp);
+            carIds.push('baggage');
+        }
+        this.carIds = carIds;
+        const carDefs = carIds.map(id => id === 'baggage'
+            ? { ...CARS.baggage, mass: this.baggageKg }
+            : CARS[id]);
+        this.consist = buildConsist(locoDef, locoState, carDefs);
+        this.hasABB = carIds.includes('abb');
 
         this.env = { adhesion: R.adhesion || 'dry', ambient: (R.ambient ?? 30) + (R.cracked?.heatBias || 0) };
         this.train = makeTrainState(this.consist, { ambient: this.env.ambient });
@@ -98,6 +116,8 @@ export class RunScene {
         this.fuelStart = this.train.fuel;
         this.emergencyLockout = 0;
         this.overspeedSecs = 0;
+        this.blowout = false;
+        this.abbDamaged = false;
         this.worstOverspeed = 0;
         this.hornTimer = 0;
         this.arrived = false;
@@ -581,6 +601,28 @@ export class RunScene {
         if (t.stalled) this.everStalled = true;
         if (t.wheelslip > 0.2) this.slipSeconds += dt;
 
+        /* The Missus. Held wide open on a boiler nobody has washed out, a joint
+           lets go — and there is no fixing it at the lineside. She will make
+           steam at about half the rate for the rest of the trip, which on a
+           hill is the difference between arriving and not. */
+        if (!this.blowout && this.isSteam()) {
+            const reg = Math.max(0, t.notch) / this.consist.loco.notches;
+            const risk = blowoutRisk(this.consist.loco, this.consist.locoState,
+                                     reg, t.steam / this.consist.loco.steamMax);
+            if (risk > 0 && Math.random() < risk * dt) {
+                this.blowout = true;
+                t.steam = 0;
+                t.steamLeak = 0.5;
+                const sp = stackPoint(this.route, t, this.camS, 'steam', this.onSiding);
+                this.plume.burst(sp.x - 24, sp.y + 34, 34);
+                this.shake = 1.2;
+                sound.alarm();
+                this.warn('danger', 'BLOWN JOINT — SHE IS LOSING STEAM', 'blow');
+                this.say('meera', 'Aiyo. That is a joint gone. Shut her off, let her sit, ' +
+                                  'and bring her in gently — she has half a boiler now.');
+            }
+        }
+
         // The bodged component, if the chapter gave us one
         if (R.bodge && !this.bodgeFailed && R.bodge.slipSensitive && this.slipSeconds > 2.6) {
             if (Math.random() < R.bodge.failChance * dt * 0.9) {
@@ -616,6 +658,12 @@ export class RunScene {
             const bite = (t.shock - limit) * dt * 0.62 * (0.35 + this.consist.fragility);
             this.cargoLost = Math.min(1, this.cargoLost + bite);
             this.warn('danger', 'SHOCK EVENT — LADING AT RISK');
+            if (this.hasABB && !this.abbDamaged && t.shock > limit + 0.1) {
+                this.abbDamaged = true;
+                this.say('meera', 'That was the device. *A long pause.* Write it in the book. ' +
+                                  'All of it, exactly as it happened.');
+                this.warn('danger', 'THE ABB DEVICE TOOK A SHOCK', 'abb');
+            }
         }
 
         // Scripted radio
@@ -679,6 +727,10 @@ export class RunScene {
         return {
             success, failReason: reason || null,
             pay: this.pay,
+            cars: this.carIds,
+            refusedPeople: this.refusedPeople,
+            blowout: this.blowout,
+            abbDamaged: this.abbDamaged,
             time: this.elapsed,
             miles: t.distanceRun / MILE,
             spads: this.spads,
@@ -723,6 +775,8 @@ export class RunScene {
             noderate:!this.everDerated,
             nostall: !this.everStalled,
             noslip:  !this.bodgeFailed,
+            noblow:  !this.blowout,
+            abb:     !this.abbDamaged,
             nostrike:!this.struckDebris,
         };
         return (R.objectives || []).map(o => ({ ...o, met: !!map[o.id] }));

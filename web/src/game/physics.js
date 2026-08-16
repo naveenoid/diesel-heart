@@ -48,6 +48,7 @@ export function makeTrainState(consist, opts = {}) {
         heat: opts.ambient ?? 34,
         steam: isSteam ? 100 : 0,
         steamTrend: 0,
+        steamLeak: 1,     // < 1 after she blows a joint
         fuel: opts.fuel ?? 100,
         slack: 0, slackVel: 0,
         shock: 0, peakShock: 0,
@@ -127,7 +128,7 @@ export function stepTrain(t, consist, route, env, dt) {
     let steamScale = 1;
     if (isSteam) {
         const drain = loco.steamDrain * cmd * (0.55 + Math.min(1.4, t.v / 9));
-        const gain  = loco.steamRecover * (1 - cmd * 0.85);
+        const gain  = loco.steamRecover * (1 - cmd * 0.85) * (t.steamLeak ?? 1);
         const before = t.steam;
         t.steam = Math.max(0, Math.min(loco.steamMax, t.steam - drain * dt + gain * dt));
         t.steamTrend = dt > 0 ? (t.steam - before) / dt : 0;

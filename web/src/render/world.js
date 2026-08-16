@@ -9,9 +9,9 @@
 
 import { MILE } from '../data/routes.js';
 
-export const PPM     = 4.4;    // pixels per metre, horizontally
-export const TRAIN_X = 352;    // where the locomotive's nose sits on screen
-export const RAIL_Y  = 470;    // railhead under the locomotive
+export const PPM     = 5.2;    // pixels per metre, horizontally
+export const TRAIN_X = 368;    // where the locomotive's nose sits on screen
+export const RAIL_Y  = 462;    // railhead under the locomotive
 export const VEXAG   = 2.0;    // vertical exaggeration of the grade
 
 const W = 1280, H = 720;
@@ -220,6 +220,36 @@ function drawRidge(ctx, camS, para, baseY, amp, freq, seed, color, treeColor) {
     }
 }
 
+/* ── City backdrop ────────────────────────────────────────────────────────────
+   The valley's ridges are wrong behind Kottapuram. Where the line is inside the
+   city, the far layers become a skyline instead — same parallax, same drawing
+   cost, entirely different place. */
+function drawSkyline(ctx, camS, para, baseY, color, litColor, seed, alpha, lit) {
+    if (alpha <= 0.01) return;
+    const off = camS * para;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    for (let i = -2; i < 34; i++) {
+        const k = i + Math.floor(off / 70);
+        const bw = 30 + hash(k * 1.7 + seed) * 62;
+        const bh = 40 + hash(k * 3.3 + seed) * 150;
+        const bx = k * 70 - off + hash(k + seed) * 12;
+        if (bx < -120 || bx > W + 120) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect(bx, baseY - bh, bw, bh + 40);
+        // A water tank or a stair head on most roofs, because there always is
+        if (hash(k * 5.1 + seed) > 0.5) ctx.fillRect(bx + bw * 0.55, baseY - bh - 9, 12, 9);
+        if (lit) {
+            ctx.fillStyle = litColor;
+            for (let r = 0; r < Math.floor(bh / 22); r++)
+                for (let c = 0; c < Math.floor(bw / 16); c++)
+                    if (hash(k * 11 + r * 7 + c * 3 + seed) > 0.55)
+                        ctx.fillRect(bx + 5 + c * 16, baseY - bh + 9 + r * 22, 7, 9);
+        }
+    }
+    ctx.restore();
+}
+
 /* ── Ballast, sleepers, rail ─────────────────────────────────────────────── */
 function trackPath(route, camS, offsetY = 0, s0 = null, s1 = null) {
     const pts = [];
@@ -233,55 +263,95 @@ function trackPath(route, camS, offsetY = 0, s0 = null, s1 = null) {
     return pts;
 }
 
-function drawRoadbed(ctx, pts, sky, sidingDrop = 0) {
-    if (pts.length < 2) return;
-    const dark = sky.amb;
+/* The camera sits a little above the railhead, so the track is drawn as two
+   rails with the sleepers spanning between them — far rail up and dull, near
+   rail down and polished. That single change is what stops the permanent way
+   reading as a line drawn on a hillside. */
+const GAUGE_DY = 8;     // how far "up" the far rail sits, in screen pixels
+const GAUGE_DX = 3;     // and how far along, so the track recedes
 
-    // Ballast shoulder
+function drawRoadbed(ctx, pts, sky) {
+    if (pts.length < 2) return;
+    const d = sky.amb;
+    const rgb = (r, g, b) => `rgb(${Math.round(r * d + 8)},${Math.round(g * d + 8)},${Math.round(b * d + 9)})`;
+
+    // Ballast: a shoulder that falls away below the sleeper ends
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y + 4);
-    for (const p of pts) ctx.lineTo(p.x, p.y + 4);
-    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x + 0, pts[i].y + 30);
+    ctx.moveTo(pts[0].x + GAUGE_DX, pts[0].y - GAUGE_DY + 1);
+    for (const p of pts) ctx.lineTo(p.x + GAUGE_DX, p.y - GAUGE_DY + 1);
+    for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i].x - 6, pts[i].y + 26);
     ctx.closePath();
-    const bg = ctx.createLinearGradient(0, 0, 0, 1);
-    ctx.fillStyle = `rgb(${Math.round(96 * dark + 12)},${Math.round(90 * dark + 12)},${Math.round(82 * dark + 14)})`;
+    const bg = ctx.createLinearGradient(0, pts[0].y - GAUGE_DY, 0, pts[0].y + 26);
+    bg.addColorStop(0, rgb(118, 111, 100));
+    bg.addColorStop(0.45, rgb(96, 90, 82));
+    bg.addColorStop(1, rgb(58, 54, 48));
+    ctx.fillStyle = bg;
     ctx.fill();
 
-    // Sleepers, spaced in world units so they scroll correctly
-    ctx.fillStyle = `rgb(${Math.round(64 * dark + 10)},${Math.round(46 * dark + 9)},${Math.round(33 * dark + 8)})`;
+    // Sleepers, spaced in world units so they scroll correctly, each drawn as a
+    // parallelogram spanning from the near rail up to the far one.
     for (let i = 0; i < pts.length - 1; i++) {
         const p = pts[i];
         const phase = ((p.s % 0.72) + 0.72) % 0.72;
-        if (phase < 0.36) {
-            const dx = pts[i + 1].x - p.x, dy = pts[i + 1].y - p.y;
-            const ang = Math.atan2(dy, dx);
-            ctx.save();
-            ctx.translate(p.x, p.y + 6);
-            ctx.rotate(ang);
-            ctx.fillRect(-3, -1, 6, 8);
-            ctx.restore();
-        }
+        if (phase >= 0.36) continue;
+        const ang = Math.atan2(pts[i + 1].y - p.y, pts[i + 1].x - p.x);
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(ang);
+        // Top face of the sleeper, catching light
+        ctx.fillStyle = rgb(86, 62, 42);
+        ctx.beginPath();
+        ctx.moveTo(-3.4, 3);
+        ctx.lineTo(3.4, 3);
+        ctx.lineTo(3.4 + GAUGE_DX, 3 - GAUGE_DY);
+        ctx.lineTo(-3.4 + GAUGE_DX, 3 - GAUGE_DY);
+        ctx.closePath(); ctx.fill();
+        // Near end grain, in shadow
+        ctx.fillStyle = rgb(50, 35, 24);
+        ctx.fillRect(-3.4, 3, 6.8, 2.6);
+        ctx.restore();
     }
 
-    // Rail: a dark web with a bright, worn head
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = `rgb(${Math.round(38 * dark + 8)},${Math.round(36 * dark + 8)},${Math.round(36 * dark + 9)})`;
-    ctx.lineWidth = 5;
+
+    // Far rail: dulled by distance, and never polished on this railway
+    ctx.strokeStyle = rgb(44, 42, 42);
+    ctx.lineWidth = 3.4;
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y + 1);
-    for (const p of pts) ctx.lineTo(p.x, p.y + 1);
+    ctx.moveTo(pts[0].x + GAUGE_DX, pts[0].y - GAUGE_DY);
+    for (const p of pts) ctx.lineTo(p.x + GAUGE_DX, p.y - GAUGE_DY);
+    ctx.stroke();
+    ctx.strokeStyle = rgb(122, 124, 128);
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x + GAUGE_DX, pts[0].y - GAUGE_DY - 1);
+    for (const p of pts) ctx.lineTo(p.x + GAUGE_DX, p.y - GAUGE_DY - 1);
     ctx.stroke();
 
-    ctx.strokeStyle = `rgb(${Math.round(178 * dark + 26)},${Math.round(180 * dark + 28)},${Math.round(186 * dark + 30)})`;
-    ctx.lineWidth = 2.1;
+    // Near rail: web in shadow, head worn bright by a hundred years of wheels
+    ctx.strokeStyle = rgb(34, 32, 32);
+    ctx.lineWidth = 4.6;
     ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y - 1);
-    for (const p of pts) ctx.lineTo(p.x, p.y - 1);
+    ctx.moveTo(pts[0].x, pts[0].y + 1.5);
+    for (const p of pts) ctx.lineTo(p.x, p.y + 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = rgb(196, 200, 206);
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y - 0.6);
+    for (const p of pts) ctx.lineTo(p.x, p.y - 0.6);
+    ctx.stroke();
+    // Specular glint along the very top of the railhead
+    ctx.strokeStyle = `rgba(255,255,255,${0.32 * d})`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y - 1.8);
+    for (const p of pts) ctx.lineTo(p.x, p.y - 1.8);
     ctx.stroke();
 }
 
 /* ── Ground fill beneath the track ───────────────────────────────────────── */
-function drawGround(ctx, pts, sky, weather) {
+function drawGround(ctx, pts, sky, weather, urban = 0) {
     if (pts.length < 2) return;
     const d = sky.amb;
     const snow = weather === 'snow';
@@ -295,8 +365,10 @@ function drawGround(ctx, pts, sky, weather) {
         g.addColorStop(0, `rgb(${Math.round(198 * d + 30)},${Math.round(206 * d + 32)},${Math.round(214 * d + 36)})`);
         g.addColorStop(1, `rgb(${Math.round(150 * d + 22)},${Math.round(160 * d + 24)},${Math.round(172 * d + 28)})`);
     } else {
-        g.addColorStop(0, `rgb(${Math.round(78 * d + 12)},${Math.round(92 * d + 14)},${Math.round(54 * d + 12)})`);
-        g.addColorStop(1, `rgb(${Math.round(46 * d + 9)},${Math.round(56 * d + 11)},${Math.round(34 * d + 9)})`);
+        // Grass out in the valley; ash, dust and clinker inside the city.
+        const mix = (green, grey) => Math.round((green * (1 - urban) + grey * urban) * d);
+        g.addColorStop(0, `rgb(${mix(78, 96) + 12},${mix(92, 90) + 14},${mix(54, 80) + 12})`);
+        g.addColorStop(1, `rgb(${mix(46, 58) + 9},${mix(56, 55) + 11},${mix(34, 50) + 9})`);
     }
     ctx.fillStyle = g;
     ctx.fill();
@@ -614,6 +686,147 @@ function drawLandmark(ctx, lm, x, y, sky, weather) {
             ctx.textAlign = 'left';
             break;
         }
+        /* ── The city. Dense, layered, and full of people who are not
+              looking at the railway. ── */
+        case 'citystation': {
+            const w = (lm.span || 420) * PPM;
+            // Trainshed: a long ribbed roof on columns
+            ctx.fillStyle = shade(96, 92, 88);
+            for (let i = 0; i <= 10; i++) ctx.fillRect(x - w / 2 + (w / 10) * i - 3, y - 96, 6, 96);
+            ctx.fillStyle = shade(70, 74, 78);
+            ctx.beginPath();
+            ctx.moveTo(x - w / 2 - 16, y - 96);
+            ctx.lineTo(x + w / 2 + 16, y - 96);
+            ctx.lineTo(x + w / 2 + 6, y - 128);
+            ctx.lineTo(x - w / 2 - 6, y - 128);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = shade(110, 116, 122);
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 18; i++) {
+                const px = x - w / 2 + (w / 18) * i;
+                ctx.beginPath(); ctx.moveTo(px, y - 96); ctx.lineTo(px - 5, y - 127); ctx.stroke();
+            }
+            // Departure board, permanently wrong
+            ctx.fillStyle = shade(24, 26, 28);
+            ctx.fillRect(x - 60, y - 92, 120, 20);
+            ctx.fillStyle = lit ? '#ffca55' : shade(190, 150, 60);
+            ctx.font = '7px ui-monospace, monospace';
+            ctx.textAlign = 'center';
+            ctx.fillText('KOTTAPURAM CENTRAL', x, y - 79);
+            ctx.textAlign = 'left';
+            break;
+        }
+        case 'tenements': {
+            const w = (lm.span || 500) * PPM;
+            // Blocks of flats at three depths, each dimmer than the one in front
+            for (let layer = 2; layer >= 0; layer--) {
+                const dep = 0.55 + layer * 0.22;
+                const base = y - 30 - layer * 26;
+                for (let i = 0; i < 9; i++) {
+                    const bw = 44 + hash(i * 3.1 + layer + lm.s) * 46;
+                    const bh = 70 + hash(i * 7.7 + layer * 2 + lm.s) * 120;
+                    const bx = x - w / 2 + i * (w / 9) + hash(i + layer) * 14;
+                    ctx.fillStyle = `rgb(${Math.round((150 - layer * 26) * d * dep + 12)},${
+                        Math.round((136 - layer * 24) * d * dep + 12)},${
+                        Math.round((120 - layer * 22) * d * dep + 14)})`;
+                    ctx.fillRect(bx, base - bh, bw, bh);
+                    // Windows — lit at random, more of them after dark
+                    for (let r = 0; r < Math.floor(bh / 20); r++) {
+                        for (let c = 0; c < Math.floor(bw / 15); c++) {
+                            const on = hash(i * 13 + r * 5 + c * 3 + layer + lm.s) > (lit ? 0.42 : 0.86);
+                            ctx.fillStyle = on
+                                ? `rgba(255,206,120,${0.85 * dep})`
+                                : `rgba(${40 * d | 0},${44 * d | 0},${50 * d | 0},${0.8 * dep})`;
+                            ctx.fillRect(bx + 5 + c * 15, base - bh + 8 + r * 20, 8, 10);
+                        }
+                    }
+                    // Water tanks on the roof, which every one of them has
+                    if (hash(i * 2.2 + layer) > 0.45) {
+                        ctx.fillStyle = `rgb(${Math.round(70 * d * dep + 10)},${Math.round(90 * d * dep + 12)},${Math.round(110 * d * dep + 14)})`;
+                        ctx.fillRect(bx + bw * 0.5, base - bh - 11, 14, 11);
+                    }
+                }
+            }
+            break;
+        }
+        case 'gopuram': {
+            // A temple tower, stepped, above the rooftops
+            const tiers = 6;
+            for (let i = 0; i < tiers; i++) {
+                const tw = 74 - i * 10, th = 17;
+                const ty = y - 46 - i * th;
+                ctx.fillStyle = shade(214 - i * 6, 198 - i * 6, 176 - i * 5);
+                ctx.fillRect(x - tw / 2, ty - th, tw, th);
+                ctx.fillStyle = shade(176, 96, 62);
+                ctx.fillRect(x - tw / 2 - 2, ty - th, tw + 4, 3.5);
+                for (let k = 0; k < 4; k++) {
+                    ctx.fillStyle = shade(196, 150, 96);
+                    ctx.fillRect(x - tw / 2 + 5 + k * (tw - 10) / 4, ty - th + 5, 5, 9);
+                }
+            }
+            ctx.fillStyle = shade(212, 168, 74);
+            for (const dx of [-16, 0, 16]) {
+                ctx.beginPath();
+                ctx.arc(x + dx, y - 46 - tiers * 17 - 5, 5, Math.PI, 0);
+                ctx.fill();
+            }
+            ctx.fillStyle = shade(150, 140, 126);
+            ctx.fillRect(x - 46, y - 46, 92, 46);
+            break;
+        }
+        case 'bazaar': {
+            const w = (lm.span || 380) * PPM;
+            ctx.fillStyle = shade(120, 110, 96);
+            ctx.fillRect(x - w / 2, y - 52, w, 52);
+            // A run of awnings in colours nobody coordinated
+            const cols = [[196, 78, 62], [70, 128, 152], [206, 168, 70], [90, 140, 92], [172, 96, 150]];
+            for (let i = 0; i < 10; i++) {
+                const ax = x - w / 2 + i * (w / 10);
+                const c = cols[i % cols.length];
+                ctx.fillStyle = `rgb(${Math.round(c[0] * d)},${Math.round(c[1] * d)},${Math.round(c[2] * d)})`;
+                ctx.beginPath();
+                ctx.moveTo(ax, y - 52);
+                ctx.lineTo(ax + w / 10, y - 52);
+                ctx.lineTo(ax + w / 10 - 5, y - 38);
+                ctx.lineTo(ax + 5, y - 38);
+                ctx.closePath(); ctx.fill();
+            }
+            if (lit) {
+                ctx.fillStyle = 'rgba(255,214,140,0.6)';
+                for (let i = 0; i < 12; i++) ctx.fillRect(x - w / 2 + i * (w / 12) + 6, y - 34, 3, 3);
+            }
+            break;
+        }
+        case 'flyover': {
+            const w = (lm.span || 300) * PPM;
+            // A road bridge over the line, on fat concrete piers
+            ctx.fillStyle = shade(126, 124, 120);
+            ctx.fillRect(x - w / 2, y - 116, w, 16);
+            ctx.fillStyle = shade(96, 94, 92);
+            ctx.fillRect(x - w / 2, y - 100, w, 5);
+            for (const px of [x - w / 2 + 20, x + w / 2 - 34]) {
+                ctx.fillStyle = shade(112, 110, 106);
+                ctx.fillRect(px, y - 95, 16, 95);
+            }
+            // Parapet, and the traffic that never moves on it
+            ctx.fillStyle = shade(146, 144, 140);
+            ctx.fillRect(x - w / 2, y - 128, w, 12);
+            for (let i = 0; i < 6; i++) {
+                const cx2 = x - w / 2 + 24 + i * (w - 48) / 6;
+                ctx.fillStyle = ['#8a3a2c', '#2f5b76', '#c8b055', '#4a6b48'][i % 4];
+                ctx.fillRect(cx2, y - 137, 22, 9);
+            }
+            break;
+        }
+        case 'watertank': {
+            ctx.fillStyle = shade(104, 100, 94);
+            for (const dx of [-26, 26]) ctx.fillRect(x + dx - 4, y - 92, 8, 92);
+            ctx.fillStyle = shade(132, 128, 120);
+            roundRect(ctx, x - 40, y - 132, 80, 44, 4); ctx.fill();
+            ctx.fillStyle = shade(96, 92, 86);
+            ctx.fillRect(x - 44, y - 136, 88, 6);
+            break;
+        }
         case 'lab': {
             ctx.fillStyle = shade(158, 166, 172);
             ctx.fillRect(x - 54, y - 96, 108, 98);
@@ -633,48 +846,70 @@ function drawStation(ctx, st, x, y, sky) {
     const lit = sky.night;
     const shade = (r, g, b) => `rgb(${Math.round(r * d)},${Math.round(g * d)},${Math.round(b * d)})`;
 
-    // Platform
-    ctx.fillStyle = shade(150, 144, 132);
-    ctx.fillRect(x - 130, y + 2, 260, 16);
-    ctx.fillStyle = shade(118, 112, 102);
-    ctx.fillRect(x - 130, y + 16, 260, 8);
+    /* The platform stands on the far side of the track, with its surface at
+       carriage-floor height — so it never hides the train, and the buildings
+       on it are standing at the right level rather than in the ballast. */
+    const P = y - 20;                       // platform surface
+    const fx = x + GAUGE_DX * 2;            // pushed back beyond the far rail
 
-    // Building
+    // Platform top face, receding
+    ctx.fillStyle = shade(176, 169, 155);
+    ctx.beginPath();
+    ctx.moveTo(fx - 134, P);
+    ctx.lineTo(fx + 134, P);
+    ctx.lineTo(fx + 140, P - 9);
+    ctx.lineTo(fx - 128, P - 9);
+    ctx.closePath(); ctx.fill();
+    // Coping edge and the wall down to the ballast
+    ctx.fillStyle = shade(206, 199, 184);
+    ctx.fillRect(fx - 134, P, 268, 2.5);
+    const wall = ctx.createLinearGradient(0, P + 2, 0, y + 4);
+    wall.addColorStop(0, shade(118, 112, 103));
+    wall.addColorStop(1, shade(74, 70, 64));
+    ctx.fillStyle = wall;
+    ctx.fillRect(fx - 134, P + 2.5, 268, y + 4 - P);
+
+    // Station building, standing on the platform
+    const bh = 66;
     ctx.fillStyle = shade(122, 96, 70);
-    ctx.fillRect(x - 74, y - 68, 148, 70);
+    ctx.fillRect(fx - 74, P - 9 - bh, 148, bh);
     ctx.fillStyle = shade(80, 62, 46);
     ctx.beginPath();
-    ctx.moveTo(x - 92, y - 68); ctx.lineTo(x, y - 100); ctx.lineTo(x + 92, y - 68);
+    ctx.moveTo(fx - 92, P - 9 - bh);
+    ctx.lineTo(fx, P - 9 - bh - 30);
+    ctx.lineTo(fx + 92, P - 9 - bh);
     ctx.closePath(); ctx.fill();
-    // Canopy over the platform
+
+    // Canopy over the platform edge
     ctx.fillStyle = shade(66, 52, 40);
-    ctx.fillRect(x - 116, y - 44, 42, 5);
-    ctx.fillRect(x + 74, y - 44, 42, 5);
-    ctx.fillStyle = shade(60, 48, 38);
-    ctx.fillRect(x - 116, y - 40, 4, 40);
-    ctx.fillRect(x + 112, y - 40, 4, 40);
+    ctx.fillRect(fx - 118, P - 50, 44, 5);
+    ctx.fillRect(fx + 74, P - 50, 44, 5);
+    ctx.fillStyle = shade(58, 46, 36);
+    ctx.fillRect(fx - 118, P - 46, 4, 46);
+    ctx.fillRect(fx + 114, P - 46, 4, 46);
 
     ctx.fillStyle = lit ? '#ffdc9a' : shade(140, 160, 172);
-    ctx.fillRect(x - 56, y - 50, 24, 26);
-    ctx.fillRect(x + 32, y - 50, 24, 26);
+    ctx.fillRect(fx - 56, P - 9 - bh + 18, 24, 26);
+    ctx.fillRect(fx + 32, P - 9 - bh + 18, 24, 26);
     ctx.fillStyle = shade(46, 38, 30);
-    ctx.fillRect(x - 12, y - 50, 24, 50);
+    ctx.fillRect(fx - 12, P - 9 - bh + 18, 24, bh - 18);
 
     // Nameboard
     ctx.fillStyle = shade(226, 220, 204);
-    ctx.fillRect(x - 62, y - 84, 124, 15);
+    ctx.fillRect(fx - 62, P - 9 - bh - 16, 124, 15);
     ctx.fillStyle = '#1a1c1f';
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.textAlign = 'center';
-    ctx.fillText(st.name.toUpperCase(), x, y - 73);
+    ctx.fillText(st.name.toUpperCase(), fx, P - 9 - bh - 5);
     ctx.textAlign = 'left';
 
+    // A lamp on the platform, and what it does to the dark
     if (lit) {
-        const g = ctx.createRadialGradient(x, y - 30, 4, x, y - 30, 150);
-        g.addColorStop(0, 'rgba(255,208,130,0.20)');
+        const g = ctx.createRadialGradient(fx, P - 34, 4, fx, P - 34, 165);
+        g.addColorStop(0, 'rgba(255,208,130,0.22)');
         g.addColorStop(1, 'rgba(255,208,130,0)');
         ctx.fillStyle = g;
-        ctx.fillRect(x - 160, y - 180, 320, 220);
+        ctx.fillRect(fx - 175, P - 200, 350, 240);
     }
 }
 
@@ -683,17 +918,16 @@ function drawStation(ctx, st, x, y, sky) {
    speed in a side view like something close, regular, and going past fast. */
 function drawPoles(ctx, route, camS, sky) {
     const d = sky.amb;
-    const SPACING = 46;                       // metres between poles
+    const SPACING = 46;
     const first = Math.floor((camS - 120) / SPACING) * SPACING;
     const poles = [];
     for (let s = first; s < camS + 340; s += SPACING) {
         const p = trackPoint(route, s, camS);
         if (p.x < -90 || p.x > W + 90) continue;
-        poles.push({ x: p.x, y: p.y - 6, top: p.y - 6 - 96 });
+        poles.push({ x: p.x, y: p.y - 14, top: p.y - 14 - 100 });
     }
     if (!poles.length) return;
 
-    // Wires first, so the poles sit in front of them.
     ctx.strokeStyle = `rgba(${Math.round(30 * d + 16)},${Math.round(30 * d + 16)},${Math.round(34 * d + 18)},0.75)`;
     ctx.lineWidth = 1;
     for (const dy of [4, 10, 16]) {
@@ -706,9 +940,15 @@ function drawPoles(ctx, route, camS, sky) {
         ctx.stroke();
     }
 
-    ctx.fillStyle = `rgb(${Math.round(58 * d + 12)},${Math.round(46 * d + 10)},${Math.round(34 * d + 9)})`;
     for (const p of poles) {
-        ctx.fillRect(p.x - 2, p.top, 4, p.y - p.top);
+        // A pole is a cylinder too: lit on one side, dark on the other.
+        const g = ctx.createLinearGradient(p.x - 2.5, 0, p.x + 2.5, 0);
+        g.addColorStop(0, `rgb(${Math.round(38 * d + 8)},${Math.round(30 * d + 7)},${Math.round(22 * d + 6)})`);
+        g.addColorStop(0.4, `rgb(${Math.round(76 * d + 14)},${Math.round(60 * d + 12)},${Math.round(44 * d + 10)})`);
+        g.addColorStop(1, `rgb(${Math.round(34 * d + 8)},${Math.round(27 * d + 7)},${Math.round(20 * d + 6)})`);
+        ctx.fillStyle = g;
+        ctx.fillRect(p.x - 2.5, p.top, 5, p.y - p.top);
+        ctx.fillStyle = `rgb(${Math.round(62 * d + 12)},${Math.round(49 * d + 10)},${Math.round(36 * d + 9)})`;
         ctx.fillRect(p.x - 11, p.top + 2, 22, 3);
         ctx.fillRect(p.x - 8, p.top + 14, 16, 2.5);
     }
@@ -717,15 +957,16 @@ function drawPoles(ctx, route, camS, sky) {
 /* ── Foreground ───────────────────────────────────────────────────────────────
    A near bank of weeds and fence, moving faster than everything else, filling
    the bottom of the frame and giving the eye something to measure speed by. */
-function drawForeground(ctx, camS, sky, weather) {
+function drawForeground(ctx, camS, sky, weather, urban = 0) {
     const d = Math.max(0.5, sky.amb);
     const off = camS * 1.34 * PPM;
     const baseY = RAIL_Y + 138;
 
-    // Bank
     ctx.fillStyle = weather === 'snow'
         ? `rgb(${Math.round(176 * d)},${Math.round(186 * d)},${Math.round(198 * d)})`
-        : `rgb(${Math.round(38 * d)},${Math.round(48 * d)},${Math.round(28 * d)})`;
+        : `rgb(${Math.round((38 * (1 - urban) + 54 * urban) * d)},${
+                 Math.round((48 * (1 - urban) + 50 * urban) * d)},${
+                 Math.round((28 * (1 - urban) + 46 * urban) * d)})`;
     ctx.beginPath();
     ctx.moveTo(-40, H);
     for (let x = -40; x <= W + 40; x += 20) {
@@ -735,7 +976,6 @@ function drawForeground(ctx, camS, sky, weather) {
     ctx.closePath();
     ctx.fill();
 
-    // Weeds along the crest
     ctx.strokeStyle = weather === 'snow'
         ? `rgba(${Math.round(210 * d)},${Math.round(218 * d)},${Math.round(228 * d)},0.9)`
         : `rgba(${Math.round(52 * d)},${Math.round(66 * d)},${Math.round(34 * d)},0.95)`;
@@ -750,23 +990,17 @@ function drawForeground(ctx, camS, sky, weather) {
     }
     ctx.stroke();
 
-    // Fence posts, further along the bank
     const fOff = camS * 1.12 * PPM;
     ctx.fillStyle = `rgb(${Math.round(46 * d)},${Math.round(38 * d)},${Math.round(28 * d)})`;
-    ctx.strokeStyle = `rgba(${Math.round(52 * d)},${Math.round(44 * d)},${Math.round(32 * d)},0.9)`;
-    ctx.lineWidth = 1.4;
     const posts = [];
     for (let i = -2; i < 22; i++) {
-        const px = ((i * 96 - fOff % 96) % (W + 260) + W + 260) % (W + 260) - 130;
-        posts.push(px);
+        posts.push(((i * 96 - fOff % 96) % (W + 260) + W + 260) % (W + 260) - 130);
     }
-    posts.sort((a, b) => a - b);
     for (const px of posts) {
         const py = baseY - 22 + Math.sin((px + off) * 0.009) * 7;
         ctx.fillRect(px - 2, py, 4, 30);
     }
 
-    // Bottom edge shadow, so the HUD has something to sit against
     const g = ctx.createLinearGradient(0, H - 130, 0, H);
     g.addColorStop(0, 'rgba(6,8,10,0)');
     g.addColorStop(1, 'rgba(6,8,10,0.65)');
@@ -810,18 +1044,36 @@ export function drawWorld(ctx, v) {
 
     drawSky(ctx, sky, v.hour, camS);
 
-    // Ridge layers, far to near.
-    drawRidge(ctx, camS, 0.05, 352, 34, 1.9, 11.3,
-        mixHex(sky.mid, '#38506a', 0.55), null);
-    drawRidge(ctx, camS, 0.13, 392, 26, 3.1, 4.7,
-        mixHex(sky.mid, '#2b3f4e', 0.75), null);
-    drawRidge(ctx, camS, 0.30, 424, 18, 5.3, 21.9,
-        weather === 'snow' ? mixHex(sky.low, '#8f9aa4', 0.8) : mixHex(sky.low, '#2f4232', 0.85),
-        weather === 'snow' ? mixHex(sky.low, '#5c6a76', 0.9) : mixHex(sky.low, '#1e2f22', 0.92));
+    /* How much of a city we are in: one inside Kottapuram, zero out in the
+       valley, and a blend across the mile where the two argue about it. */
+    const urban = route.linePos
+        ? Math.max(0, Math.min(1, (4800 - route.linePos(camS)) / 1400)) : 0;
+
+    // Ridge layers, far to near — hills fading out as the city fades in.
+    if (urban < 0.98) {
+        ctx.save();
+        ctx.globalAlpha = 1 - urban;
+        drawRidge(ctx, camS, 0.05, 352, 34, 1.9, 11.3,
+            mixHex(sky.mid, '#38506a', 0.55), null);
+        drawRidge(ctx, camS, 0.13, 392, 26, 3.1, 4.7,
+            mixHex(sky.mid, '#2b3f4e', 0.75), null);
+        drawRidge(ctx, camS, 0.30, 424, 18, 5.3, 21.9,
+            weather === 'snow' ? mixHex(sky.low, '#8f9aa4', 0.8) : mixHex(sky.low, '#2f4232', 0.85),
+            weather === 'snow' ? mixHex(sky.low, '#5c6a76', 0.9) : mixHex(sky.low, '#1e2f22', 0.92));
+        ctx.restore();
+    }
+    if (urban > 0.02) {
+        drawSkyline(ctx, camS, 0.06, 372, mixHex(sky.mid, '#4a5568', 0.62),
+            'rgba(255,214,150,0.5)', 3.7, urban, sky.night);
+        drawSkyline(ctx, camS, 0.16, 404, mixHex(sky.mid, '#39414f', 0.80),
+            'rgba(255,206,132,0.7)', 9.1, urban, sky.night);
+        drawSkyline(ctx, camS, 0.34, 430, mixHex(sky.low, '#2c313b', 0.88),
+            'rgba(255,200,120,0.85)', 15.4, urban, sky.night);
+    }
 
     // Main track and the ground it sits on.
     const pts = trackPath(route, camS);
-    drawGround(ctx, pts, gsky, weather);
+    drawGround(ctx, pts, gsky, weather, urban);
 
     // Landmarks sit behind the track, in the middle distance.
     for (const lm of route.landmarks) {
@@ -919,7 +1171,7 @@ export function drawWorld(ctx, v) {
         drawMilepost(ctx, p.x, p.y, k, gsky);
     }
 
-    drawForeground(ctx, camS, sky, weather);
+    drawForeground(ctx, camS, sky, weather, urban);
 }
 
 /* ── Post-pass: fog, night vignette, headlight ───────────────────────────── */
