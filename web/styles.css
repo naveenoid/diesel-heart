@@ -1,0 +1,260 @@
+/* ── Diesel Heart ─────────────────────────────────────────────────────────────
+   The chrome around the canvas: an oil-stained enginehouse palette. Everything
+   the player actually plays is drawn on the canvas; the DOM handles menus,
+   dialogue and the depot paperwork, because paperwork deserves real text. */
+
+:root {
+    --ink:        #0b0c0e;
+    --steel:      #1b1e22;
+    --steel-hi:   #262b31;
+    --grease:     #34393f;
+    --paper:      #d8cdb8;
+    --paper-dim:  #9d947f;
+    --brass:      #d1a04a;
+    --brass-dim:  #8a6a2e;
+    --signal-red: #e0452f;
+    --signal-grn: #5fc27e;
+    --signal-amb: #e8a838;
+    --coolant:    #6fa8c8;
+    --shadow:     0 12px 40px rgba(0,0,0,.55);
+    --mono: ui-monospace, "SF Mono", "Roboto Mono", "DejaVu Sans Mono", monospace;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    background: #060708;
+    /* Faint radial pool of light, like a bulb over a workbench. */
+    background-image: radial-gradient(ellipse at 50% 38%, #14171a 0%, #060708 72%);
+    color: var(--paper);
+    font-family: var(--mono);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+}
+
+#frame {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: grid;
+    place-items: center;
+}
+
+#stage {
+    display: block;
+    background: #0a0b0d;
+    box-shadow: var(--shadow);
+    image-rendering: auto;
+}
+
+/* The overlay sits exactly on top of the canvas; main.js keeps its box in sync
+   with the letterboxed canvas rect so DOM panels line up with drawn art. */
+#overlay {
+    position: absolute;
+    pointer-events: none;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+}
+#overlay > * { pointer-events: auto; }
+#overlay:empty { display: none; }
+
+/* ── Shared panel language ─────────────────────────────────────────────────
+   Riveted steel plates with a paper label glued on. */
+
+.panel {
+    background: linear-gradient(#1e2226, #14171a);
+    border: 1px solid #2f353b;
+    border-radius: 3px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);
+    padding: 26px 30px;
+    max-width: 900px;
+    max-height: 92%;
+    overflow-y: auto;
+}
+
+.panel h1 {
+    font-family: var(--serif);
+    font-size: 30px;
+    font-weight: 600;
+    letter-spacing: .5px;
+    color: var(--paper);
+    margin-bottom: 4px;
+}
+.panel h2 {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2.6px;
+    text-transform: uppercase;
+    color: var(--brass);
+    margin-bottom: 16px;
+}
+.panel h3 {
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--paper-dim);
+    margin: 20px 0 8px;
+    border-bottom: 1px solid #2a2f34;
+    padding-bottom: 5px;
+}
+.panel p { font-size: 13.5px; line-height: 1.72; color: #b9b0a0; margin-bottom: 10px; }
+.panel p em { color: var(--paper); font-style: italic; }
+
+.rule { height: 1px; background: #2a2f34; margin: 16px 0; border: 0; }
+
+/* ── Buttons ── */
+
+.btn {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    padding: 11px 22px;
+    background: linear-gradient(#2c3238, #1d2126);
+    color: var(--paper);
+    border: 1px solid #3d444b;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s, transform .06s;
+}
+.btn:hover { background: linear-gradient(#373e46, #23282e); border-color: var(--brass-dim); }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .34; cursor: not-allowed; }
+.btn[disabled]:hover { background: linear-gradient(#2c3238, #1d2126); border-color: #3d444b; }
+
+.btn.primary {
+    background: linear-gradient(#8a6a2e, #6a4f1f);
+    border-color: var(--brass);
+    color: #1a1408;
+    font-weight: 700;
+}
+.btn.primary:hover { background: linear-gradient(#a88138, #855f25); }
+
+.btn.danger { border-color: #7d3325; color: #eba193; }
+.btn.danger:hover { background: linear-gradient(#43201a, #2c1512); border-color: var(--signal-red); }
+
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+
+/* ── Data tables (depot paperwork) ── */
+
+table.ledger { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.ledger th {
+    text-align: left;
+    font-size: 10px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: var(--paper-dim);
+    padding: 5px 8px;
+    border-bottom: 1px solid #2f353b;
+    font-weight: 600;
+}
+table.ledger td { padding: 7px 8px; border-bottom: 1px solid #202428; color: #b9b0a0; }
+table.ledger tr:last-child td { border-bottom: 0; }
+table.ledger td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.good { color: var(--signal-grn); }
+.warn { color: var(--signal-amb); }
+.bad  { color: var(--signal-red); }
+
+/* Condition bars ── a component's health, read at a glance. */
+.bar { height: 6px; background: #14171a; border: 1px solid #2a2f34; border-radius: 1px; overflow: hidden; min-width: 90px; }
+.bar > i { display: block; height: 100%; background: var(--signal-grn); transition: width .3s; }
+.bar > i.warn { background: var(--signal-amb); }
+.bar > i.bad  { background: var(--signal-red); }
+
+/* ── Card grids (roster, contracts, cars) ── */
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 10px; }
+.card {
+    background: #191d21;
+    border: 1px solid #2c3238;
+    border-radius: 3px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+}
+.card:hover { border-color: var(--brass-dim); background: #1f2429; }
+.card.sel { border-color: var(--brass); background: #23282c; box-shadow: inset 0 0 0 1px rgba(209,160,74,.25); }
+.card.locked { opacity: .4; cursor: not-allowed; }
+.card .nm { font-size: 13px; color: var(--paper); letter-spacing: .4px; }
+.card .sub { font-size: 10.5px; color: var(--paper-dim); letter-spacing: 1px; text-transform: uppercase; margin-top: 2px; }
+.card .meta { font-size: 11px; color: #8d8676; margin-top: 8px; line-height: 1.6; }
+
+/* ── Dialogue ── */
+
+.dlg { max-width: 760px; }
+.dlg .who {
+    font-family: var(--serif);
+    font-size: 19px;
+    color: var(--brass);
+    margin-bottom: 2px;
+}
+.dlg .role {
+    font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--paper-dim); margin-bottom: 14px;
+}
+.dlg .line { font-size: 15px; line-height: 1.85; color: #cfc6b4; font-family: var(--serif); }
+.dlg .line + .line { margin-top: 12px; }
+.dlg .stage-dir { color: #7f7869; font-style: italic; font-size: 13.5px; }
+
+.choices { display: flex; flex-direction: column; gap: 8px; margin-top: 22px; }
+.choice {
+    text-align: left;
+    font-family: var(--serif);
+    font-size: 14px;
+    letter-spacing: .2px;
+    text-transform: none;
+    padding: 12px 16px;
+    line-height: 1.5;
+}
+
+/* ── Toast (in-run notices that outlive a single frame) ── */
+
+#toast {
+    position: absolute;
+    bottom: 4%;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: center;
+    pointer-events: none;
+}
+.toast-item {
+    background: rgba(8,9,11,.9);
+    border-left: 3px solid var(--brass);
+    padding: 8px 18px;
+    font-size: 12px;
+    letter-spacing: 1.2px;
+    color: var(--paper);
+    animation: toastIn .25s ease-out;
+}
+.toast-item.bad  { border-left-color: var(--signal-red); }
+.toast-item.good { border-left-color: var(--signal-grn); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ── Key legend ── */
+kbd {
+    display: inline-block;
+    min-width: 20px;
+    text-align: center;
+    padding: 2px 6px;
+    background: #23282d;
+    border: 1px solid #3b4249;
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--paper);
+}
+
+.keygrid { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; align-items: center; font-size: 12.5px; color: #a9a091; }
+
+/* Scrollbars, so the panels don't look like a browser default. */
+.panel::-webkit-scrollbar { width: 9px; }
+.panel::-webkit-scrollbar-track { background: #131619; }
+.panel::-webkit-scrollbar-thumb { background: #2f353b; border-radius: 4px; }
+.panel::-webkit-scrollbar-thumb:hover { background: #3d444b; }
