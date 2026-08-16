@@ -63,6 +63,24 @@ export function baggageMass(camp) {
     return Math.round(BAGGAGE_BASE * (1 - (camp.goodwill / 100) * 0.7));
 }
 
+/**
+ * The car list a run will *actually* be worked with, baggage included.
+ * Everything that quotes a tonnage — the briefing, the yard's ruling-grade
+ * figure, the physics — has to agree, or the yard is lying to the driver.
+ */
+export function effectiveCars(camp, run, chosenCars) {
+    const ids = [...(chosenCars || run.cars)];
+    if (LOCOS[run.loco]?.carriesBaggage && !run.noBaggage) ids.push('baggage');
+    return ids;
+}
+
+/** Those ids as car definitions, with the baggage weighed for today. */
+export function carDefs(camp, ids) {
+    return ids.map(id => id === 'baggage'
+        ? { ...CARS.baggage, mass: baggageMass(camp) }
+        : CARS[id]);
+}
+
 /* ── Repairs ──────────────────────────────────────────────────────────────────
    The right way costs money you do not have. The other way costs you a chance
    of it letting go on the hill. */

@@ -14,7 +14,7 @@ import { drawWorld, drawAtmosphere, skyFor, Weather, PPM, trackPoint } from '../
 import { drawPlayerTrain, drawTrafficTrain, Plume, stackPoint } from '../render/trains.js';
 import { drawHUD, fmtTime } from '../render/hud.js';
 import { CHARACTERS } from '../data/story.js';
-import { baggageMass, blowoutRisk } from './state.js';
+import { baggageMass, blowoutRisk, effectiveCars, carDefs } from './state.js';
 import { sound } from '../audio.js';
 
 const W = 1280, H = 720;
@@ -31,26 +31,18 @@ export class RunScene {
         this.route = buildRoute(R.from, R.to);
         const locoDef = LOCOS[R.loco];
         const locoState = camp.locos[R.loco];
-        // The yard may have handed us a train the player made up themselves.
-        const carIds = [...(order.cars || R.cars)];
+        /* The yard may have handed us a train the player made up themselves —
+           and Velaikkaran and the Missus never travel light, so the baggage car
+           goes wherever they go. Its weight is the valley's opinion of us, made
+           physical: thirty tonnes when nobody trusts us, under ten when they do,
+           because by then most of it has been dealt with by somebody who wanted
+           to help. */
         this.pay = (R.pay || 0) + (order.bonus || 0);
         this.refusedPeople = order.refusedPeople || 0;
-
-        /* Velaikkaran and the Missus never travel light: the baggage car goes
-           wherever they go. Its weight is the valley's opinion of us, made
-           physical — thirty tonnes when nobody trusts us, under ten when they
-           do, because by then most of it has been dealt with by somebody who
-           wanted to help. */
-        this.baggageKg = 0;
-        if (locoDef.carriesBaggage && !R.noBaggage) {
-            this.baggageKg = baggageMass(camp);
-            carIds.push('baggage');
-        }
+        this.baggageKg = locoDef.carriesBaggage && !R.noBaggage ? baggageMass(camp) : 0;
+        const carIds = effectiveCars(camp, R, order.cars);
         this.carIds = carIds;
-        const carDefs = carIds.map(id => id === 'baggage'
-            ? { ...CARS.baggage, mass: this.baggageKg }
-            : CARS[id]);
-        this.consist = buildConsist(locoDef, locoState, carDefs);
+        this.consist = buildConsist(locoDef, locoState, carDefs(camp, carIds));
         this.hasABB = carIds.includes('abb');
 
         this.env = { adhesion: R.adhesion || 'dry', ambient: (R.ambient ?? 30) + (R.cracked?.heatBias || 0) };

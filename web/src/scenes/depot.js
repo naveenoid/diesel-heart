@@ -229,8 +229,10 @@ export function composeScreen(camp, chapter) {
         const render = () => {
             const cars = [...R.cars.map(id => CARS[id]),
                           ...optional.filter(o => taken.has(o.key)).map(o => CARS[o.id])];
-            const trailing = cars.reduce((a, c) => a + c.mass, 0);
-            const length = cars.reduce((a, c) => a + c.len, 0) + 22;
+            // The baggage rides whether you like it or not, so it counts here.
+            const bagKg = loco.carriesBaggage && !R.noBaggage ? baggageMass(camp) : 0;
+            const trailing = cars.reduce((a, c) => a + c.mass, 0) + bagKg;
+            const length = cars.reduce((a, c) => a + c.len, 0) + 22 + (bagKg ? CARS.baggage.len : 0);
             const revenue = cars.reduce((a, c) => a + c.pay, 0);
             const total = trailing + loco.mass;
             // Sustained, not flat out: what she will actually hold up there.
@@ -291,6 +293,8 @@ export function composeScreen(camp, chapter) {
                     <tr><td>Cars</td><td class="num ${over ? 'bad' : ''}">${cars.length}${R.maxCars ? ` / ${R.maxCars}` : ''}</td>
                         <td>Trailing</td><td class="num">${Math.round(trailing / 1000)} t</td>
                         <td>Length</td><td class="num">${Math.round(length)} m</td></tr>
+                    <tr><td>Baggage (always)</td><td class="num ${bagKg > 22000 ? 'warn' : ''}">${Math.round(bagKg / 1000)} t</td>
+                        <td colspan="4" style="font-size:11px;color:#8d8676">Goodwill lightens it. Nothing else does.</td></tr>
                     <tr><td>Revenue on offer</td><td class="num good">${money(revenue)}</td>
                         <td>Ruling grade</td><td class="num">${(ruling * 100).toFixed(1)}% at MP ${route.mpAt(rulingAt).toFixed(1)}</td>
                         <td colspan="2" class="${vCls}"><strong>${vTxt}</strong></td></tr>

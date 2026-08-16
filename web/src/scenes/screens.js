@@ -10,6 +10,7 @@ import { drawWorld, drawAtmosphere, skyFor, Weather } from '../render/world.js';
 import { drawPlayerTrain, Plume, stackPoint } from '../render/trains.js';
 import { fmtTime } from '../render/hud.js';
 import { show, prompt, esc, money, condBar, clearOverlay } from './ui.js';
+import { effectiveCars, carDefs, baggageMass } from '../game/state.js';
 import { sound } from '../audio.js';
 
 const W = 1280, H = 720;
@@ -100,6 +101,16 @@ export class IdleScene {
 }
 
 /* ── Title ───────────────────────────────────────────────────────────────── */
+/* Driving this needs a keyboard. Say so plainly rather than letting somebody
+   open it on a phone and find there is no way to touch the throttle. */
+function inputWarning() {
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (!coarse) return '';
+    return `<p class="warn"><em>This looks like a touch device. The menus work, but
+        driving needs a keyboard — there are no on-screen controls yet. On a phone or
+        tablet, pair a keyboard, or come back on a computer.</em></p>`;
+}
+
 export async function titleScreen(hasSave) {
     const buttons = [];
     if (hasSave) buttons.push({ id: 'continue', label: 'Continue', cls: 'primary' });
@@ -113,6 +124,7 @@ export async function titleScreen(hasSave) {
            There is a train to Halloway on Thursday.</p>
         <p>You have four second-hand locomotives, one slot a day on somebody else's
            mainline, and four towns that have no other road.</p>
+        ${inputWarning()}
     `, buttons);
 
     if (r === 'about') {
@@ -127,8 +139,8 @@ export async function titleScreen(hasSave) {
             <p><strong>Weight.</strong> A thousand tons of train does not stop because you would like it to.
                The amber dashed line on the strip is where you would stop if you put the
                brake in right now. Look at it often.</p>
-            <p><strong>Heat.</strong> Number seventeen makes 2,600 horsepower and cooks herself
-               doing it. Hold notch 8 up Sabre Hill and she will pull her own power back to
+            <p><strong>Heat.</strong> Velaikkaran makes 2,600 horsepower and cooks himself
+               doing it. Hold notch 8 up Sabre Hill and he will pull his own power back to
                survive, halfway up, with the train pushing you backwards.</p>
             <p><strong>Slack.</strong> The couplers have play in them. Snatch at the throttle or
                the brake and the shock runs down the train — and the thing at the back is
@@ -166,7 +178,8 @@ export async function briefing(ch, camp, carIds) {
     const route = buildRoute(R.from, R.to);
     const loco = LOCOS[R.loco];
     const ls = camp.locos[R.loco];
-    const cars = (carIds || R.cars).map(id => CARS[id]);
+    const ids = effectiveCars(camp, R, carIds);
+    const cars = carDefs(camp, ids);
     const consist = buildConsist(loco, ls, cars);
     const climb = routeClimb(route);
 
@@ -176,7 +189,7 @@ export async function briefing(ch, camp, carIds) {
     }[R.weather] || 'Clear';
 
     const carRows = cars.map(c => `
-        <tr><td>${esc(c.name)}</td>
+        <tr><td>${esc(c.name)}${c.baggage ? ' <span class="warn">·always</span>' : ''}</td>
             <td class="num">${Math.round(c.mass / 1000)} t</td>
             <td class="num">${c.len.toFixed(1)} m</td>
             <td class="num ${c.fragility > 0.6 ? 'bad' : c.fragility > 0.35 ? 'warn' : ''}">${(c.fragility * 100) | 0}%</td>
